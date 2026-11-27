@@ -1253,8 +1253,11 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
         const bool exporting =
             (recorder == video::State::starting || recorder == video::State::recording) &&
             video::wants_fixed_step();
+        const bool high_quality = exporting || settings->quality == weather::Quality::High;
         resolved.render.march_steps = exporting ? 128 : 64;
         resolved.render.allow_half_res = !exporting; // exports always march at full size
+        resolved.render.high_quality = high_quality;
+        resolved.precipitation.high_quality = high_quality;
         // Puddles mirror the frame only in the full-colour picture; the World and Effects
         // plates keep the sky's sheen, so no plate carries another plate's content.
         resolved.render.puddle_reflections =
@@ -1263,7 +1266,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
                        resolved.render, gpu.solver, nullptr, 0);
         profiler.mark(ctx);
         gpu.precip.render(ctx, gpu.depth_srv.Get(), target, camera, resolved.precipitation,
-                          gpu.solver);
+                          gpu.solver, gpu.color_srv.Get());
         profiler.mark(ctx);
         profiler.end(ctx);
         maybe_snapshot(device, ctx, back_buffer.Get(), block->sequence);

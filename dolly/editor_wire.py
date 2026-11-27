@@ -83,6 +83,7 @@ LENS_ACTIONS = ("set_lens_rain", "set_lens_amount", "set_lens_size", "set_lens_s
 EXTRA_ACTIONS += LENS_ACTIONS
 EXTRA_ACTIONS += ("set_weather_hero_tracks",)  # ID 146 (dolly_editor.hpp SetWeatherHeroTracks)
 EXTRA_ACTIONS += ("set_debug_view",)  # ID 147 (dolly_editor.hpp SetDebugView)
+EXTRA_ACTIONS += ("set_weather_quality",)  # ID 148 (dolly_editor.hpp SetWeatherQuality)
 
 # Optional completion signal in the unused mapping tail; existing offsets stay fixed.
 CINEMATIC_OFFSET = 2 * 1024 * 1024 + 60000

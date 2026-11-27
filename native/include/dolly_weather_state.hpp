@@ -32,6 +32,11 @@ enum class Preset : std::uint32_t {
 };
 constexpr std::uint32_t kPresetCount = 8;
 
+enum class Quality : std::uint32_t {
+    Standard = 0,
+    High = 1,
+};
+
 constexpr float kIntensityMin = 0.1f, kIntensityMax = 3.0f;
 constexpr float kWindSpeedMin = 0.0f, kWindSpeedMax = 900.0f;
 constexpr float kGustsMin = 0.0f, kGustsMax = 2.5f;
@@ -78,6 +83,7 @@ struct Settings {
     bool hero_wakes = true;
     bool include_in_effects = true;
     bool hero_tracks = true; // footprint tracks in snow, sand, dust and ash
+    Quality quality = Quality::Standard;
 
     bool enabled() const noexcept { return preset != Preset::Off; }
 };
@@ -90,6 +96,7 @@ constexpr std::uint32_t kWireAbi = 1;
 constexpr std::uint32_t kWireFlagHeroWakes = 1;
 constexpr std::uint32_t kWireFlagIncludeInEffects = 2;
 constexpr std::uint32_t kWireFlagHeroTracks = 4;
+constexpr std::uint32_t kWireFlagHighQuality = 8;
 // Presets whose ground cover takes hero tracks (snow, sand, dust and ash).
 bool takes_tracks(Preset preset) noexcept;
 // The editor publishes this block in the shared mapping (seqlocked: magic at 0,
@@ -206,10 +213,12 @@ struct Controls {
 // backwards.
 std::optional<Controls> decode(const Wire& wire);
 
-// Hero positions on a fixed grid of 1/15 s replay-time cells, per hero (its entity index):
+// Hero and Solomon chess-piece positions on a fixed grid of 1/15 s replay-time cells:
 // each cell is written once (whoever fills it first: live playback or the replay reader) and
 // never changed, so every frame drawn from the store depends only on its time.
 constexpr double kStep = 1.0 / 15.0;
+// Chess pieces leave a narrower drag mark (~55% of a hero footpath) and no kick-up puffs.
+constexpr float kPieceWidthScale = 0.55f;
 struct Cell {
     std::int32_t grid = 0; // replay time = grid * kStep
     std::uint32_t slot = 0;
@@ -218,8 +227,10 @@ struct Cell {
 
 class Store {
 public:
-    // Writes a cell unless that hero already has one there. Returns true when written.
+    // Writes a hero cell unless that hero already has one there. Returns true when written.
     bool add(std::uint32_t slot, std::int32_t grid, const float pos[3]);
+    // Writes a chess-piece cell unless that piece already has one there. Returns true when written.
+    bool add_piece(std::uint32_t slot, std::int32_t grid, const float pos[3]);
     // Marks [t0, t1] as seen (played or read): merged with the ranges already seen. Returns
     // true when that changed them.
     bool add_seen(double t0, double t1);
@@ -229,12 +240,14 @@ public:
     std::size_t add_step(double t0, double t1, std::uint32_t slot, const float a[3],
                          const float b[3], std::vector<std::int32_t>* written = nullptr);
     const std::vector<std::pair<double, double>>& seen() const { return seen_; }
-    std::size_t size() const { return cells_; }
+    std::size_t size() const { return cells_ + piece_cells_; }
+    std::size_t hero_size() const { return cells_; }
+    std::size_t piece_size() const { return piece_cells_; }
     void clear();
 
-    // Trail segments of the cells inside [start, end]: per hero, consecutive cells joined
-    // unless the hero vanished (over half a second without a cell) or moved faster than a
-    // hero can (death, respawn, teleport).
+    // Trail segments of the cells inside [start, end]: per hero and per chess piece,
+    // consecutive cells joined unless the entity vanished (over half a second without a cell)
+    // or teleported. Chess-piece segments use kPieceWidthScale and kickup = 0.
     std::vector<dolly::env::TrailSegment> segments(double start, double end) const;
     // The segment that joins `slot`'s cell at `grid` to its previous cell, when the two join
     // and both lie inside [start, end].
@@ -251,15 +264,16 @@ public:
     };
     InsertEffect insert_effect(std::uint32_t slot, std::int32_t grid) const;
 
-    // File "DLYTRK02": cell count, seen-range count (u32 each), the ranges (f64 pairs), then
-    // the cells as grid (i32), slot (u32), x, y, z (f32). Saved through a temporary file.
+    // File "DLYTRK03" (also loads older "DLYTRK02" files): hero cell count, seen-range count
+    // (u32 each), the ranges (f64 pairs), the hero cells (grid i32, slot u32, x, y, z f32),
+    // then piece cell count (u32) and the piece cells. Saved through a temporary file.
     bool save(const std::string& utf8_path, std::string* error = nullptr) const;
     // Loads a store file; a missing file is an empty store.
     bool load(const std::string& utf8_path, std::string* error = nullptr);
 
     // Takes the cells read from the replay file itself (DollyReplayTracks: the same format):
     // inside the time it covers they replace every cell kept while playing (the replay is
-    // exact where a playback frame can hitch, and leaves out heroes who are not alive), and
+    // exact where a playback frame can hitch, and leaves out entities that are not alive), and
     // playback adds nothing there afterwards (add_step skips that time).
     void adopt(const Store& from_replay);
     const std::vector<std::pair<double, double>>& from_replay() const { return fixed_; }
@@ -269,9 +283,11 @@ private:
         std::vector<std::pair<std::int32_t, std::array<float, 3>>> cells; // sorted by grid
     };
     std::vector<std::pair<std::uint32_t, Hero>> heroes_; // sorted by slot
+    std::vector<std::pair<std::uint32_t, Hero>> pieces_; // sorted by slot (chess pieces)
     std::vector<std::pair<double, double>> seen_;          // sorted, disjoint
     std::vector<std::pair<double, double>> fixed_;         // read from the replay file
     std::size_t cells_ = 0;
+    std::size_t piece_cells_ = 0;
     bool fixed_at(double t) const;
     const Hero* find(std::uint32_t slot) const;
 };

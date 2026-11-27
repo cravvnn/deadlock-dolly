@@ -578,6 +578,8 @@ class DollyApp:
         self.weather_include_effects = tk.BooleanVar(value=weather_model.WEATHER_OFF.include_in_effects)
         self.weather_hero_wakes = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_wakes)
         self.weather_hero_tracks = tk.BooleanVar(value=weather_model.WEATHER_OFF.hero_tracks)
+        self.weather_quality = tk.StringVar(
+            value=weather_model.WEATHER_QUALITY_LABELS[weather_model.WEATHER_QUALITY_DEFAULT])
         self.weather_lens_rain = tk.BooleanVar(value=weather_model.WEATHER_OFF.lens_rain)
         self.selected_text = tk.StringVar(value="No camera selected")
         self.path_summary = tk.StringVar(value="0 cameras · 0.00 s")
@@ -3713,6 +3715,9 @@ class DollyApp:
         self.weather_include_effects.set(settings.include_in_effects)
         self.weather_hero_wakes.set(settings.hero_wakes)
         self.weather_hero_tracks.set(settings.hero_tracks)
+        if hasattr(self, "weather_quality"):
+            self.weather_quality.set(
+                weather_model.WEATHER_QUALITY_LABELS.get(settings.quality, "Standard"))
         self.weather_lens_rain.set(settings.lens_rain)
         view = getattr(self, "scene_view", None)
         if view is not None:
@@ -3810,9 +3815,13 @@ class DollyApp:
                     # A value the slider did not move keeps its full precision (it may come from the game).
                     if round(number, digits) != round(getattr(current, name), digits):
                         values[name] = round(number, digits)
+                quality = (weather_model.WEATHER_QUALITY_LABEL_TO_ID.get(
+                               self.weather_quality.get(), current.quality)
+                           if hasattr(self, "weather_quality") else current.quality)
                 settings = replace(current, include_in_effects=bool(self.weather_include_effects.get()),
                                    hero_wakes=bool(self.weather_hero_wakes.get()),
                                    hero_tracks=bool(self.weather_hero_tracks.get()),
+                                   quality=quality,
                                    lens_rain=bool(self.weather_lens_rain.get()), **values)
             settings.validate()
             if settings == current:

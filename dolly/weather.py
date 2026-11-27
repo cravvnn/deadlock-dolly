@@ -38,6 +38,15 @@ WEATHER_LABELS = {item[0]: item[1] for item in WEATHER_PRESETS}
 WEATHER_LABEL_TO_ID = {item[1]: item[0] for item in WEATHER_PRESETS}
 WEATHER_DEFAULT = "off"
 
+WEATHER_QUALITIES = (
+    ("standard", "Standard"),
+    ("high", "High"),
+)
+WEATHER_QUALITY_IDS = tuple(item[0] for item in WEATHER_QUALITIES)
+WEATHER_QUALITY_LABELS = {item[0]: item[1] for item in WEATHER_QUALITIES}
+WEATHER_QUALITY_LABEL_TO_ID = {item[1]: item[0] for item in WEATHER_QUALITIES}
+WEATHER_QUALITY_DEFAULT = "standard"
+
 INTENSITY_MIN, INTENSITY_MAX = 0.1, 3.0
 WIND_SPEED_MIN, WIND_SPEED_MAX = 0.0, 900.0
 GUSTS_MIN, GUSTS_MAX = 0.0, 2.5
@@ -84,6 +93,7 @@ WIRE_BYTES = struct.calcsize(WIRE_FORMAT)
 WIRE_FLAG_HERO_WAKES = 1
 WIRE_FLAG_INCLUDE_IN_EFFECTS = 2
 WIRE_FLAG_HERO_TRACKS = 4
+WIRE_FLAG_HIGH_QUALITY = 8
 # Presets whose ground cover takes hero tracks (snow, sand, dust and ash).
 TRACK_PRESETS = ("light_snow", "blizzard", "sandstorm", "dust_haze", "ash")
 
@@ -122,9 +132,10 @@ TRAILS_REPLAY_BYTES = 128
 TRAILS_WIRE_FORMAT = f"<8sIIIIdd{TRAILS_PATH_BYTES}s{TRAILS_REPLAY_BYTES}s"
 TRAILS_WIRE_BYTES = struct.calcsize(TRAILS_WIRE_FORMAT)
 TRAILS_FLAG_STORE = 1
-# The store file (beside the map grids, never in the replay): seen time ranges, then hero
-# positions on a fixed 1/15 s grid of replay time.
-TRACK_STORE_MAGIC = b"DLYTRK02"
+# The store file (beside the map grids, never in the replay): seen time ranges, hero
+# positions on a fixed 1/15 s grid of replay time, then chess-piece positions (v3).
+TRACK_STORE_MAGIC_V2 = b"DLYTRK02"
+TRACK_STORE_MAGIC = b"DLYTRK03"
 TRACK_STEP = 1.0 / 15.0
 TRACK_CELL_FORMAT = "<iI3f"
 
@@ -154,6 +165,7 @@ class WeatherSettings:
     include_in_effects: bool = True
     lens_rain: bool = False
     hero_tracks: bool = True
+    quality: str = WEATHER_QUALITY_DEFAULT
     lens_amount: float = LENS_RANGES["lens_amount"][2]
     lens_size: float = LENS_RANGES["lens_size"][2]
     lens_slide: float = LENS_RANGES["lens_slide"][2]
@@ -185,6 +197,8 @@ class WeatherSettings:
         for name in ("hero_wakes", "include_in_effects", "lens_rain", "hero_tracks"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be true or false")
+        if not isinstance(self.quality, str) or self.quality not in WEATHER_QUALITY_IDS:
+            raise ValueError("Weather quality must be standard or high")
         for name, (low, high, _default) in LENS_RANGES.items():
             _number(getattr(self, name), name.replace("_", " "), low, high)
 
@@ -207,6 +221,7 @@ class WeatherSettings:
                 "include_in_effects": self.include_in_effects,
                 "lens_rain": self.lens_rain,
                 "hero_tracks": self.hero_tracks,
+                "quality": self.quality,
                 **{name: getattr(self, name) for name in LENS_RANGES}}
 
     @classmethod
@@ -216,8 +231,8 @@ class WeatherSettings:
         fields = ("preset", "intensity", "wind_direction", "wind_speed", "gusts", "coating",
                   "height_ceiling", "build_up", "flake_size", "density", "hero_wakes",
                   "include_in_effects")
-        # Lens rain and hero tracks came after the first weather shots: optional.
-        optional = ("lens_rain", "hero_tracks") + tuple(LENS_RANGES)
+        # Lens rain, hero tracks and quality came after the first weather shots: optional.
+        optional = ("lens_rain", "hero_tracks", "quality") + tuple(LENS_RANGES)
         unknown = sorted(set(value) - set(fields) - set(optional))
         if unknown:
             raise ValueError(f"Unknown weather field: {unknown[0]}")
@@ -230,8 +245,9 @@ class WeatherSettings:
             if isinstance(number, bool) or not isinstance(number, (int, float)):
                 raise ValueError(f"Weather {name.replace('_', ' ')} must be a number")
         switches = {name: value[name] for name in ("lens_rain", "hero_tracks") if name in value}
+        quality = value.get("quality", WEATHER_QUALITY_DEFAULT)
         settings = cls(preset=value["preset"], hero_wakes=value["hero_wakes"],
-                       include_in_effects=value["include_in_effects"], **switches,
+                       include_in_effects=value["include_in_effects"], quality=quality, **switches,
                        **{name: float(number) for name, number in numbers.items()})
         settings.validate()
         return settings
@@ -246,7 +262,8 @@ class WeatherSettings:
         self.validate()
         flags = ((WIRE_FLAG_HERO_WAKES if self.hero_wakes else 0) |
                  (WIRE_FLAG_INCLUDE_IN_EFFECTS if self.include_in_effects else 0) |
-                 (WIRE_FLAG_HERO_TRACKS if self.hero_tracks else 0))
+                 (WIRE_FLAG_HERO_TRACKS if self.hero_tracks else 0) |
+                 (WIRE_FLAG_HIGH_QUALITY if self.quality == "high" else 0))
         name = map_name.encode("ascii") if map_name else b""
         if len(name) > 31 or not re.fullmatch(rb"[a-z0-9_]*", name):
             name = b""  # the helper ignores a name it cannot use
@@ -324,18 +341,42 @@ def hero_track_store(replay: str) -> Path:
 
 def read_track_store(path: Path) -> tuple[list[tuple[float, float]],
                                           list[tuple[int, int, float, float, float]]]:
-    """A track store's seen time ranges and its cells (grid, hero slot, x, y, z)."""
+    """A track store's seen time ranges and its hero cells (grid, hero slot, x, y, z).
+
+    Accepts both DLYTRK02 (heroes only) and DLYTRK03 (heroes + chess pieces)."""
+    seen, heroes, _pieces = read_track_store_all(path)
+    return seen, heroes
+
+
+def read_track_store_all(path: Path) -> tuple[list[tuple[float, float]],
+                                              list[tuple[int, int, float, float, float]],
+                                              list[tuple[int, int, float, float, float]]]:
+    """A track store's seen time ranges, hero cells, and chess-piece cells."""
     data = Path(path).read_bytes()
-    if len(data) < 16 or data[:8] != TRACK_STORE_MAGIC:
+    if len(data) < 16 or data[:8] not in (TRACK_STORE_MAGIC_V2, TRACK_STORE_MAGIC):
         raise ValueError("Not a hero track store")
+    magic = data[:8]
     cells, ranges = struct.unpack_from("<II", data, 8)
     size = struct.calcsize(TRACK_CELL_FORMAT)
-    if len(data) != 16 + ranges * 16 + cells * size:
-        raise ValueError("The hero track store is truncated")
+    hero_end = 16 + ranges * 16 + cells * size
+    if magic == TRACK_STORE_MAGIC_V2:
+        if len(data) != hero_end:
+            raise ValueError("The hero track store is truncated")
+        piece_cells = []
+    else:
+        if len(data) < hero_end + 4:
+            raise ValueError("The hero track store is truncated")
+        piece_count = struct.unpack_from("<I", data, hero_end)[0]
+        if len(data) != hero_end + 4 + piece_count * size:
+            raise ValueError("The hero track store is truncated")
+        piece_base = hero_end + 4
+        piece_cells = [struct.unpack_from(TRACK_CELL_FORMAT, data, piece_base + i * size)
+                       for i in range(piece_count)]
     seen = [struct.unpack_from("<dd", data, 16 + i * 16) for i in range(ranges)]
     base = 16 + ranges * 16
-    return seen, [struct.unpack_from(TRACK_CELL_FORMAT, data, base + i * size)
+    hero_cells = [struct.unpack_from(TRACK_CELL_FORMAT, data, base + i * size)
                   for i in range(cells)]
+    return seen, hero_cells, piece_cells
 
 
 def track_ranges(path: Path) -> list[tuple[float, float]]:
@@ -343,7 +384,7 @@ def track_ranges(path: Path) -> list[tuple[float, float]]:
     try:
         with open(path, "rb") as stream:
             head = stream.read(16)
-            if len(head) < 16 or head[:8] != TRACK_STORE_MAGIC:
+            if len(head) < 16 or head[:8] not in (TRACK_STORE_MAGIC_V2, TRACK_STORE_MAGIC):
                 return []
             ranges = struct.unpack_from("<I", head, 12)[0]
             body = stream.read(ranges * 16)

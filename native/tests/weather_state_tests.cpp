@@ -34,6 +34,7 @@ void test_round_trip_every_preset() {
         s.build_up = 12.5f + static_cast<float>(i);
         s.hero_wakes = (i % 2) == 0;
         s.include_in_effects = (i % 3) != 0;
+        s.quality = (i % 2) == 1 ? Quality::High : Quality::Standard;
         const Wire w = encode(s, 41u + i);
         CHECK(w.sequence == 41u + i);
         const auto back = decode(w);
@@ -45,6 +46,7 @@ void test_round_trip_every_preset() {
         CHECK(back->build_up == s.build_up);
         CHECK(back->hero_wakes == s.hero_wakes);
         CHECK(back->include_in_effects == s.include_in_effects);
+        CHECK(back->quality == s.quality);
     }
 }
 
@@ -78,7 +80,7 @@ void test_decode_rejects_bad_blocks() {
     w.preset = kPresetCount;
     CHECK(!decode(w).has_value());
     w = good;
-    w.flags |= 8u; // 1, 2 and 4 are known (hero tracks is 4)
+    w.flags |= 16u; // 1, 2, 4 and 8 are known (hero tracks is 4, high quality is 8)
     CHECK(!decode(w).has_value());
 
     float Wire::*fields[] = {&Wire::intensity, &Wire::wind_direction, &Wire::wind_speed,
@@ -120,6 +122,10 @@ void test_resolve_maps_presets_and_wind() {
     CHECK(fog.render.preset == dolly::env::AtmospherePreset::GroundFog);
     CHECK(fog.precipitation.kind == Precipitation::None);
     CHECK(resolve(preset_settings(Preset::RainStorm)).precipitation.kind == Precipitation::Rain);
+    Settings hq = preset_settings(Preset::RainStorm);
+    CHECK(!resolve(hq).render.high_quality && !resolve(hq).precipitation.high_quality);
+    hq.quality = Quality::High;
+    CHECK(resolve(hq).render.high_quality && resolve(hq).precipitation.high_quality);
     CHECK(resolve(preset_settings(Preset::Ash)).render.preset ==
           dolly::env::AtmospherePreset::AshEmbers);
 }
@@ -309,6 +315,61 @@ void test_track_store() {
     }
     CHECK(!read.load(file.u8string(), &error) && read.size() == 0);
     std::filesystem::remove(file);
+
+    // Chess pieces: stored alongside heroes in DLYTRK03, slide faster than heroes (up to
+    // 4000 u/s), emit narrower track-only segments (width_scale = kPieceWidthScale, kickup = 0),
+    // adopt cleanly from the replay reader, and old DLYTRK02 files still load.
+    {
+        trails::Store mix;
+        const float h0[3] = {0, 0, 256}, h1[3] = {15, 0, 256};
+        const float c0[3] = {100, 50, 256}, c1[3] = {240, 50, 256}; // 140 u in 1/15 s = 2100 u/s
+        CHECK(mix.add(3, 150, h0));
+        CHECK(mix.add(3, 151, h1));
+        CHECK(mix.add_piece(0x1000c00u, 150, c0));
+        CHECK(mix.add_piece(0x1000c00u, 151, c1));
+        mix.add_seen(0.0, 20.0);
+        CHECK(mix.hero_size() == 2 && mix.piece_size() == 2 && mix.size() == 4);
+        const auto segs_mix = mix.segments(0.0, 20.0);
+        CHECK(segs_mix.size() == 2);
+        CHECK(segs_mix[0].width_scale == 1.0f && segs_mix[0].kickup == 1.0f);
+        CHECK(near(segs_mix[1].width_scale, trails::kPieceWidthScale) && segs_mix[1].kickup == 0.0f);
+        // Round-trip DLYTRK03 save + load.
+        CHECK(mix.save(file.u8string(), &error));
+        trails::Store loaded;
+        CHECK(loaded.load(file.u8string(), &error));
+        CHECK(loaded.hero_size() == 2 && loaded.piece_size() == 2 && loaded.size() == 4);
+        CHECK(same_segments(loaded.segments(0.0, 20.0), segs_mix));
+        // Adopt replaces both hero and piece cells inside the replay's seen range.
+        trails::Store target;
+        target.add(3, 150, c0);
+        target.add_piece(0x2000c00u, 150, h0);
+        target.adopt(loaded);
+        CHECK(target.hero_size() == 2 && target.piece_size() == 2);
+        CHECK(same_segments(target.segments(0.0, 20.0), segs_mix));
+        // Legacy DLYTRK02 file (heroes only, no trailing piece section) still loads cleanly.
+        {
+            std::ofstream v2(file, std::ios::binary | std::ios::trunc);
+            const char magic[8] = {'D', 'L', 'Y', 'T', 'R', 'K', '0', '2'};
+            const std::uint32_t head[2] = {2u, 1u};
+            const double range[2] = {0.0, 20.0};
+            const std::int32_t g0 = 150, g1 = 151;
+            const std::uint32_t slot = 3u;
+            v2.write(magic, 8);
+            v2.write(reinterpret_cast<const char*>(head), sizeof(head));
+            v2.write(reinterpret_cast<const char*>(range), sizeof(range));
+            v2.write(reinterpret_cast<const char*>(&g0), 4);
+            v2.write(reinterpret_cast<const char*>(&slot), 4);
+            v2.write(reinterpret_cast<const char*>(h0), 12);
+            v2.write(reinterpret_cast<const char*>(&g1), 4);
+            v2.write(reinterpret_cast<const char*>(&slot), 4);
+            v2.write(reinterpret_cast<const char*>(h1), 12);
+        }
+        trails::Store from_v2;
+        CHECK(from_v2.load(file.u8string(), &error));
+        CHECK(from_v2.hero_size() == 2 && from_v2.piece_size() == 0 && from_v2.seen().size() == 1);
+        CHECK(from_v2.segments(0.0, 20.0).size() == 1);
+        std::filesystem::remove(file);
+    }
 }
 
 } // namespace

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from .weather import WEATHER_IDS, preset_label as weather_label
+from .weather import WEATHER_IDS, WEATHER_QUALITY_IDS, preset_label as weather_label
 from .particles import (PARTICLE_IDS, PARTICLE_INTENSITY_MAX, PARTICLE_INTENSITY_MIN,
                         PARTICLE_LABELS)
 
@@ -16,6 +16,7 @@ WEATHER_FIELDS = {
     "set_weather_height_ceiling": "height_ceiling",
     "set_weather_include_effects": "include_in_effects",
     "set_weather_hero_tracks": "hero_tracks",
+    "set_weather_quality": "quality",
     "set_lens_rain": "lens_rain", "set_lens_amount": "lens_amount", "set_lens_size": "lens_size",
     "set_lens_slide": "lens_slide", "set_lens_trails": "lens_trails",
     "set_lens_refraction": "lens_refraction", "set_lens_softness": "lens_softness",
@@ -481,6 +482,11 @@ def _dispatch(app, event, bridge, *, publish):
             if index != value or not 0 <= index < len(WEATHER_IDS):
                 raise ValueError("Choose a weather preset from the library.")
             settings = current.with_preset(WEATHER_IDS[index])
+        elif field == "quality":
+            index = int(value)
+            if index != value or not 0 <= index < len(WEATHER_QUALITY_IDS):
+                raise ValueError("Weather quality must be standard or high.")
+            settings = replace(current, quality=WEATHER_QUALITY_IDS[index])
         elif field in WEATHER_SWITCHES:
             if value not in (0, 1):
                 raise ValueError("Weather switches must be on or off.")

@@ -724,6 +724,19 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
             k::VGap(15);
             {
                 f::Greyed off(!on);
+                const int quality = int(w.quality == weather::Quality::High);
+                static const char* const qualities[]{"Standard##weather-quality",
+                                                     "High##weather-quality"};
+                k::BeginRow(26, 4);
+                const float qwidth = (k::Avail() - 4) / 2;
+                for (int i = 0; i < 2; ++i) {
+                    if (k::Tab(qualities[i], i == quality, qwidth) && i != quality)
+                        d.send(EditorAction::SetWeatherQuality, i);
+                    k::ItemTooltip("Live preview quality. High adds richer rain, splashes and "
+                                   "ripples; exports always render at High.");
+                }
+                k::EndRow();
+                k::VGap(10);
                 scalar("Intensity###weather-intensity", w.intensity, weather::kIntensityMin,
                        weather::kIntensityMax, "%.2f", EditorAction::SetWeatherIntensity, true,
                        f::Resets(1));

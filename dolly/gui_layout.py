@@ -205,6 +205,8 @@ def build_scene(app):
         hero_wakes=app.weather_hero_wakes,
         lens_rain=app.weather_lens_rain,
         hero_tracks=app.weather_hero_tracks,
+        quality=app.weather_quality,
+        quality_labels=tuple(w.WEATHER_QUALITY_LABELS[q] for q in w.WEATHER_QUALITY_IDS),
         preset_labels=tuple(w.WEATHER_LABELS[preset] for preset in w.WEATHER_IDS),
         controls=controls,
     )

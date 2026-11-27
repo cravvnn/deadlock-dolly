@@ -475,6 +475,7 @@ native/replay_tracks/THIRD_PARTY_NOTICES.txt
 native/replay_tracks/go.mod
 native/replay_tracks/go.sum
 native/replay_tracks/main.go
+native/replay_tracks/main_test.go
 native/src/bridge_win.cpp
 native/src/dolly_attach.cpp
 native/src/dolly_attach_runtime.hpp
@@ -1450,6 +1451,7 @@ docs/RELEASE_NOTES_0.7.60-beta.md
 docs/RELEASE_NOTES_0.7.61-beta.md
 docs/RELEASE_NOTES_0.7.62-beta.md
 docs/RELEASE_NOTES_0.7.63-beta.md
+docs/RELEASE_NOTES_0.7.64-beta.md
 dolly/debug_view.py
 native/profiles/deadlock-2026-11-26-6871-complete.json
 tests/test_debug_view.py
@@ -1458,3 +1460,5 @@ native/profiles/deadlock-2026-11-26-6872-complete.json
 third_party/cvar_unlocker/unlocker-build-6872.patch
 native/profiles/deadlock-2026-11-26-6873-complete.json
 third_party/cvar_unlocker/unlocker-build-6873.patch
+native/profiles/deadlock-2026-11-26-6875-complete.json
+third_party/cvar_unlocker/unlocker-build-6875.patch

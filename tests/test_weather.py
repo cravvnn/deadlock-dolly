@@ -46,7 +46,7 @@ class WeatherModel(unittest.TestCase):
                        {"wind_direction": 361.0}, {"wind_speed": -1.0}, {"gusts": 3.0},
                        {"coating": 1.5}, {"height_ceiling": 10.0}, {"build_up": -1.0},
                        {"build_up": 601.0}, {"flake_size": 0.1}, {"density": 5.0},
-                       {"hero_wakes": 1},
+                       {"hero_wakes": 1}, {"quality": "ultra"}, {"quality": 1}, {"quality": True},
                        {"include_in_effects": "yes"}, {"intensity": True}):
             with self.subTest(change=change):
                 with self.assertRaises(ValueError):
@@ -251,20 +251,34 @@ class HeroTrails(unittest.TestCase):
     def test_store_reads_back_with_coverage(self):
         ranges = [(10.0, 20.0), (30.0, 35.0)]
         cells = [(150, 3, 1.0, 2.0, 256.0), (151, 3, 5.0, 2.0, 256.0)]
+        pieces = [(150, 0x1000c00, 168.0, 75.0, 654.0)]
         body = (b"".join(struct.pack("<dd", *r) for r in ranges) +
                 b"".join(struct.pack(weather.TRACK_CELL_FORMAT, *c) for c in cells))
+        piece_body = (struct.pack("<I", len(pieces)) +
+                      b"".join(struct.pack(weather.TRACK_CELL_FORMAT, *p) for p in pieces))
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "x.tracks"
-            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body)
+            # Legacy DLYTRK02 (heroes only) still loads cleanly.
+            path.write_bytes(weather.TRACK_STORE_MAGIC_V2 + struct.pack("<II", 2, 2) + body)
             seen, read = weather.read_track_store(path)
             self.assertEqual((seen, read), (ranges, cells))
+            self.assertEqual(weather.read_track_store_all(path), (ranges, cells, []))
+            self.assertEqual(weather.track_ranges(path), ranges)
+            # Current DLYTRK03 (heroes + chess pieces).
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body + piece_body)
+            self.assertEqual(weather.read_track_store(path), (ranges, cells))
+            self.assertEqual(weather.read_track_store_all(path), (ranges, cells, pieces))
             self.assertEqual(weather.track_ranges(path), ranges)
             self.assertEqual(weather.track_coverage(ranges, 10.0, 20.0), 1.0)
             self.assertAlmostEqual(weather.track_coverage(ranges, 10.0, 30.0), 0.5)
             self.assertEqual(weather.track_coverage([], 10.0, 30.0), 0.0)
             self.assertEqual(weather.track_covered_until(ranges, 10.0), 20.0)
             self.assertEqual(weather.track_covered_until(ranges, 25.0), 25.0)
-            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 3, 2) + body)
+            # Truncated v2 and v3 stores are refused.
+            path.write_bytes(weather.TRACK_STORE_MAGIC_V2 + struct.pack("<II", 3, 2) + body)
+            with self.assertRaises(ValueError):
+                weather.read_track_store(path)
+            path.write_bytes(weather.TRACK_STORE_MAGIC + struct.pack("<II", 2, 2) + body)
             with self.assertRaises(ValueError):
                 weather.read_track_store(path)
             self.assertEqual(weather.track_ranges(Path(folder) / "missing.tracks"), [])
@@ -282,6 +296,26 @@ class HeroTrails(unittest.TestCase):
         self.assertTrue(flags & weather.WIRE_FLAG_HERO_TRACKS)
         flags = struct.unpack(weather.WIRE_FORMAT, off.pack_wire(1))[4]
         self.assertFalse(flags & weather.WIRE_FLAG_HERO_TRACKS)
+
+    def test_quality_round_trips_defaults_to_standard_when_absent_and_packs_flag(self):
+        std = weather.preset_settings("rain_storm")
+        self.assertEqual(std.quality, "standard")
+        hq = replace(std, quality="high")
+        self.assertEqual(WeatherSettings.from_dict(hq.to_dict()), hq)
+        older = std.to_dict()
+        del older["quality"]
+        self.assertEqual(WeatherSettings.from_dict(older).quality, "standard")
+        for bad in ("ultra", "", 1, True, None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    WeatherSettings.from_dict({**std.to_dict(), "quality": bad})
+        std_flags = struct.unpack(weather.WIRE_FORMAT, std.pack_wire(1))[4]
+        hq_flags = struct.unpack(weather.WIRE_FORMAT, hq.pack_wire(1))[4]
+        self.assertFalse(std_flags & weather.WIRE_FLAG_HIGH_QUALITY)
+        self.assertTrue(hq_flags & weather.WIRE_FLAG_HIGH_QUALITY)
+        self.assertEqual(int(re.search(r"kWireFlagHighQuality = (\d+);",
+                                       HEADER.read_text(encoding="utf-8")).group(1)),
+                         weather.WIRE_FLAG_HIGH_QUALITY)
 
 
 class SceneDrawerActions(unittest.TestCase):
@@ -302,6 +336,48 @@ class SceneDrawerActions(unittest.TestCase):
         self.assertEqual(int(re.search(r"kWireFlagHeroTracks = (\d+);",
                                        HEADER.read_text(encoding="utf-8")).group(1)),
                          weather.WIRE_FLAG_HERO_TRACKS)
+        # Weather quality: appended as 148, flag 8 in the weather block.
+        self.assertEqual(names.index("set_weather_quality"), 148)
+        self.assertEqual(names[-1], "set_weather_quality")
+        self.assertIn("SetWeatherQuality) == 148", header)
+        self.assertIn("kEditorActionLast) == 148", header)
+
+    def test_dispatch_set_weather_quality_updates_shot_and_rejects_bad_values(self):
+        from types import SimpleNamespace
+        from dolly import editor_dispatch
+        sent, dirty, refreshed, published = [], [], [], []
+        app = SimpleNamespace(
+            busy=False,
+            project=_shot(weather=preset_settings("rain_storm")),
+            camera_tree=None,
+            status_text=SimpleNamespace(set=lambda _msg: None),
+            controller=SimpleNamespace(set_native_weather=lambda s, tick: sent.append((s, tick))),
+            _selection_index=lambda _tree: None,
+            _refresh_weather=lambda: refreshed.append(True),
+            _mark_dirty=lambda: dirty.append(True),
+        )
+        ok = editor_dispatch.dispatch(
+            app, {"action": "set_weather_quality", "value": 1.0}, None,
+            publish=lambda: published.append(True),
+        )
+        self.assertTrue(ok)
+        self.assertEqual(app.project.weather.quality, "high")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[-1][0].quality, "high")
+        self.assertTrue(dirty and refreshed and published)
+        ok = editor_dispatch.dispatch(
+            app, {"action": "set_weather_quality", "value": 0.0}, None,
+            publish=lambda: published.append(True),
+        )
+        self.assertTrue(ok)
+        self.assertEqual(app.project.weather.quality, "standard")
+        for bad in (-1.0, 2.0, 0.5, float("nan"), True):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    editor_dispatch.dispatch(
+                        app, {"action": "set_weather_quality", "value": bad}, None,
+                        publish=lambda: None,
+                    )
 
 
 class PlateSignal(unittest.TestCase):
@@ -324,16 +400,18 @@ class DesktopScenePage(unittest.TestCase):
     def test_sliders_cover_every_numeric_drawer_setting(self):
         from dolly.editor_dispatch import WEATHER_FIELDS, WEATHER_SWITCHES
         from dolly.gui import WEATHER_SLIDERS
-        numeric = set(WEATHER_FIELDS.values()) - {"preset"} - set(WEATHER_SWITCHES)
+        numeric = set(WEATHER_FIELDS.values()) - {"preset", "quality"} - set(WEATHER_SWITCHES)
         self.assertEqual(set(WEATHER_SLIDERS), numeric)
 
     def test_both_switches_are_in_the_drawer_and_on_the_page(self):
         drawer = (ROOT / "native" / "src" / "dolly_rail_drawers.cpp").read_text(encoding="utf-8")
         self.assertIn("EditorAction::SetWeatherHeroWakes", drawer)
         self.assertIn("EditorAction::SetWeatherIncludeEffects", drawer)
+        self.assertIn("EditorAction::SetWeatherQuality", drawer)
         page = (ROOT / "dolly" / "ui" / "scene_page.py").read_text(encoding="utf-8")
         self.assertIn("state.hero_wakes", page)
         self.assertIn("state.include_in_effects", page)
+        self.assertIn("state.quality", page)
 
     def test_page_edits_and_follows_the_shot_weather(self):
         import tkinter as tk
@@ -354,6 +432,7 @@ class DesktopScenePage(unittest.TestCase):
             weather_include_effects=tk.BooleanVar(root),
             weather_hero_wakes=tk.BooleanVar(root),
             weather_hero_tracks=tk.BooleanVar(root),
+            weather_quality=tk.StringVar(root),
             weather_lens_rain=tk.BooleanVar(root),
             status_text=tk.StringVar(root),
             controller=SimpleNamespace(set_native_weather=lambda s, tick: sent.append((s, tick))),
@@ -378,11 +457,13 @@ class DesktopScenePage(unittest.TestCase):
         app.weather_values["density"].set(2.5049)
         app.weather_include_effects.set(False)
         app.weather_hero_wakes.set(False)
+        app.weather_quality.set("High")
         changed()
         self.assertEqual(app.project.weather.density, 2.5)
         self.assertEqual(app.project.weather.gusts, 1.23456)
         self.assertFalse(app.project.weather.include_in_effects)
         self.assertFalse(app.project.weather.hero_wakes)
+        self.assertEqual(app.project.weather.quality, "high")
 
         # Nothing moved: no new undo step and nothing sent.
         count = len(sent), len(dirty)

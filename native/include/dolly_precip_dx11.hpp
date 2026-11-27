@@ -48,8 +48,10 @@ struct PrecipitationParams {
     uint32_t seed = 0x2545F491u;
     // 0: the first look. 1: varied sizes, streaks that dim and taper, particles that
     // dissolve into the haze with distance. 2: look 1 as mostly fine specks with fewer big
-    // flakes or grains. Larger values are treated as 2. Rain looks the same in all three.
+    // flakes or grains. Larger values are treated as 2.
     uint32_t look = kShippedPrecipitationLook;
+    // High quality adds denser fine sand/rain layers and richer lighting; exports always set it.
+    bool high_quality = false;
 };
 
 // Flakes drawn for these parameters (0 when off), capped at kMaxPrecipitationFlakes.
@@ -70,7 +72,8 @@ public:
     // returns true.
     bool render(ID3D11DeviceContext* ctx, ID3D11ShaderResourceView* scene_depth_srv,
                 ID3D11RenderTargetView* out_rtv, const EnvCamera& camera,
-                const PrecipitationParams& params, const WindFluidSolverDX11& fluid);
+                const PrecipitationParams& params, const WindFluidSolverDX11& fluid,
+                ID3D11ShaderResourceView* scene_color_srv = nullptr);
 
     bool ready() const noexcept;
 
