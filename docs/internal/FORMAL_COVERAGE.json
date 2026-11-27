@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "d97491ad417172357b4e491d20c39e860011f6e8889d92a006ecb3fe282f4d3a",
+      "sha256": "a17145eda3aa968465379644e6ce97829898e900104800508d8847772ed130a0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -6469,7 +6469,7 @@
     },
     {
       "path": "dolly/ui/scene_page.py",
-      "sha256": "e41d1ecdacacc6852ae4e7e686aab66a983aa066cae7efb074b1a61725d48217",
+      "sha256": "68ede832ce9849b8a42ed65a4323f8b14ec517ef3f789b24182c839553178346",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "stateful partial/open",
@@ -9495,7 +9495,7 @@
     },
     {
       "path": "native/src/dolly_env_render_dx11.cpp",
-      "sha256": "3c63dc1258a742e4ef4e073edc80140c2f842c37d38b09174cf8d3c7d43d75b5",
+      "sha256": "15df3d86edbd57b54d9da54b48e31d172da1af3cc9dccd2703d452d34831dc98",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10128,7 +10128,7 @@
     },
     {
       "path": "native/src/dolly_precip_dx11.cpp",
-      "sha256": "ab89b1f70120d1f71bdfef14c32bc7a3bf870a840d26ac90a51efd4644b82628",
+      "sha256": "328a05d61800274e420ec7102b23262eb0fcbd820ad3537a9cba126e917235ef",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -10202,7 +10202,7 @@
     },
     {
       "path": "native/src/dolly_rail_drawers.cpp",
-      "sha256": "eb6bbdc43433ea9dcfc4d18e6ae3db58f8c14ca4c191c8b491e65c7a4727f2e0",
+      "sha256": "163312660f6b2636f9b6938893581cee6a0d1e7c3d2776e411139c4ed6db7fd8",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L04",
       "disposition": "native owner/delegated contract open",
@@ -10925,7 +10925,7 @@
     },
     {
       "path": "native/src/dolly_weather_runtime_win.cpp",
-      "sha256": "dd225a1336e2b40544957c87c4700bd42e9e52f2fe0796162a67c6219af45bbb",
+      "sha256": "9fd1bd19e7e509962ea62a6adbb7e31dcc22a119846446428357b6eb457526c5",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -14626,6 +14626,11 @@
     },
     {
       "path": "docs/RELEASE_NOTES_0.7.64-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "docs/RELEASE_NOTES_0.7.66-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -20650,7 +20655,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 598,
+    "metadata/configuration/documentation input": 599,
     "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,

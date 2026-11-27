@@ -1,9 +1,9 @@
 {
   "abi": 4,
-  "version": "0.7.64-beta",
-  "sha256": "f46f89b47d7735e45b6a856aeabe8e58496acd8c7c0d30c0e5b38f9c74963313",
+  "version": "0.7.66-beta",
+  "sha256": "2df9264008b31c0b20bc15fbb1d831c4ce745ccdff75e73a110f2885b4e173a2",
   "game_audio_sha256": "6dbc14c294524c952030f63da0ac9baa0099325f968d12769b851a0883d1e983",
-  "built_utc": "2026-11-27T07:50:45.815292+00:00",
+  "built_utc": "2026-11-27T09:04:02.086936+00:00",
   "compiler": "Visual Studio 17 2022",
   "configuration": "Release",
   "runtime": "static",
@@ -15,12 +15,10 @@
   "native_attach_tests_passed": true,
   "native_overlay_tests_passed": true,
   "native_video_math_tests_passed": true,
-  "native_video_encoder_tests_passed": false,
+  "native_video_encoder_tests_passed": true,
   "native_depth_scene_tests_passed": true,
-  "skipped_tests": [
-    "native_video_encoder_smoke"
-  ],
-  "full_suite_complete": false,
+  "skipped_tests": [],
+  "full_suite_complete": true,
   "reshade_game_runtime_verified": false,
   "game_runtime_verified": false,
   "pe": {

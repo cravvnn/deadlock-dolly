@@ -35,7 +35,7 @@ BENTO_GAP = 20
 CAPTION_MIN = 120
 
 WEATHER_INFO = "Saved with the shot. Playback, scrubbing and export match exactly."
-QUALITY_INFO = "Live preview quality. High adds richer rain, splashes and ripples; exports always render at High."
+QUALITY_INFO = "Weather detail for live preview and video exports. High adds finer sand, reflections and puddle ripples."
 WIND_INFO = "Moves haze, flakes and drifts around the map. Direction is where the wind blows toward."
 PRECIP_INFO = "Snow, rain, sand and ash flakes. Fog and haze presets have none."
 GROUND_INFO = "Coating settles where open sky is above; haze rises to the ceiling."

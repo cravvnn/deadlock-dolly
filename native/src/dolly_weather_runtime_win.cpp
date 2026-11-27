@@ -1253,7 +1253,7 @@ void render(ID3D11Device* device, ID3D11DeviceContext* ctx, IDXGISwapChain* chai
         const bool exporting =
             (recorder == video::State::starting || recorder == video::State::recording) &&
             video::wants_fixed_step();
-        const bool high_quality = exporting || settings->quality == weather::Quality::High;
+        const bool high_quality = settings->quality == weather::Quality::High;
         resolved.render.march_steps = exporting ? 128 : 64;
         resolved.render.allow_half_res = !exporting; // exports always march at full size
         resolved.render.high_quality = high_quality;

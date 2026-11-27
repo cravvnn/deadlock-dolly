@@ -971,78 +971,8 @@ float2 RippleSlope(float2 xy, float time, float rate, bool hq) {
     return slope;
 }
 
-// Impact splashes where raindrops hit wet ground or puddles: brief expanding rings and
-// tiny impact crowns, stateless in time, fading cleanly with distance.
-float RainSplash(float2 xy, float time, float rate, float footprint, float puddle, bool hq) {
-    float distFade = 1.0 - smoothstep(0.35, 1.45, footprint);
-    if (distFade <= 0.001) return 0.0;
-    static const float scales[2] = {21.3, 31.9};
-    static const float cosA[2] = {0.91309, -0.29432};
-    static const float sinA[2] = {0.40776, 0.95571};
-    float total = 0.0;
-    [unroll] for (int layer = 0; layer < 2; ++layer) {
-        float sc = scales[layer];
-        float2 rxy = Rot2(xy, cosA[layer], sinA[layer]);
-        float2 q = rxy / sc;
-        if (hq) {
-            float2 base = floor(q - 0.5);
-            [unroll] for (int oy = 0; oy < 2; ++oy) {
-                [unroll] for (int ox = 0; ox < 2; ++ox) {
-                    float2 cell = base + float2(ox, oy);
-                    float h = Hash3(float3(cell, layer * 29.1 + 3.3));
-                    float h2 = Hash3(float3(cell, layer * 29.1 + 11.7));
-                    float phase = frac(time * rate * lerp(0.85, 1.25, h) + h * 11.3 + h2 * 5.9);
-                    if (phase >= 0.28) continue;
-                    float sp = phase / 0.28;
-                    float2 center = (cell + 0.22 + 0.56 * float2(h, h2)) * sc;
-                    float2 d = rxy - center;
-                    float dist = length(d);
-                    float maxRad = lerp(2.8, 5.2, puddle) * lerp(0.75, 1.25, h2);
-                    float ringR = lerp(0.45, maxRad, sqrt(sp));
-                    float thick = max(0.34, footprint * 0.95);
-                    float ring = exp(-pow((dist - ringR) / thick, 2.0)) * (1.0 - sp) * (1.0 - sp);
-                    float crown = 0.0;
-                    if (sp < 0.42) {
-                        float cp = sp / 0.42;
-                        float ang = atan2(d.y, d.x);
-                        float petals = 0.65 + 0.35 * sin(ang * 5.0 + h * 6.2831);
-                        float cr = lerp(0.25, 1.45, cp);
-                        crown = exp(-pow((dist - cr) / max(0.45, footprint * 1.1), 2.0)) *
-                                petals * (1.0 - cp) * 1.25;
-                    }
-                    total += (ring * 0.72 + crown);
-                }
-            }
-        } else {
-            float2 cell = floor(q);
-            float h = Hash3(float3(cell, layer * 29.1 + 3.3));
-            float h2 = Hash3(float3(cell, layer * 29.1 + 11.7));
-            float phase = frac(time * rate * lerp(0.85, 1.25, h) + h * 11.3 + h2 * 5.9);
-            if (phase < 0.28) {
-                float sp = phase / 0.28;
-                // Keep splash center away from cell borders so rings never clip in 1x1 mode.
-                float2 center = (cell + 0.32 + 0.36 * float2(h, h2)) * sc;
-                float2 d = rxy - center;
-                float dist = length(d);
-                float maxRad = lerp(2.5, 4.4, puddle) * lerp(0.8, 1.2, h2);
-                float ringR = lerp(0.45, maxRad, sqrt(sp));
-                float thick = max(0.38, footprint * 1.0);
-                float ring = exp(-pow((dist - ringR) / thick, 2.0)) * (1.0 - sp) * (1.0 - sp);
-                float crown = sp < 0.38
-                                  ? exp(-pow((dist - lerp(0.25, 1.25, sp / 0.38)) /
-                                                 max(0.45, footprint * 1.1), 2.0)) *
-                                        (1.0 - sp / 0.38) * 1.1
-                                  : 0.0;
-                total += (ring * 0.7 + crown);
-            }
-        }
-    }
-    return saturate(total) * distFade;
-}
-
 // Rain: open ground darkens as it soaks and takes a glossy wet sheen; standing water pools
-// on flat ground and mirrors the sky (and, where allowed, the frame), stirred by raindrops
-// and punctuated by expanding impact splashes.
+// on flat ground and mirrors the sky (and, where allowed, the frame), stirred by raindrops.
 float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 viewDir,
                     float coat, float open, float cavity, float footprint) {
     float upMask = smoothstep(0.28, 0.78, surfNormal.z);
@@ -1088,14 +1018,6 @@ float3 ApplyWetness(float3 baseColor, float3 surfPos, float3 surfNormal, float3 
         float3 water = baseColor * lerp(0.56, 0.44, puddle);
         float3 pool = lerp(water, mirror.rgb * lerp(lit, 1.0, mirror.a), fresnel);
         color = lerp(color, pool, puddle);
-    }
-
-    // Impact splashes on open-sky upward-facing wet surfaces (stronger on puddles).
-    float splashMask = saturate(styleA.y) * open * smoothstep(0.55, 0.88, surfNormal.z);
-    if (splashMask > 0.001) {
-        float splash = RainSplash(surfPos.xy, windTime.z, rainRate * 1.15, footprint, puddle, hq);
-        float3 splashLight = (ambientColor.rgb * 1.1 + sunColor.rgb * (0.35 + 0.85 * lit));
-        color += splashLight * splash * splashMask * lerp(0.32, 0.68, puddle);
     }
     return color;
 }

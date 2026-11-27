@@ -162,27 +162,14 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float r0 = Rand(iid, seed, 11u), r1 = Rand(iid, seed, 23u);
     float r2 = Rand(iid, seed, 37u), r3 = Rand(iid, seed, 53u);
 #if LOOK >= 1
-    bool isRain = kind == KIND_RAIN;
     bool isSand = kind == KIND_SAND;
-    bool styled = true;
+    bool styled = kind != KIND_RAIN;
     float r4 = Rand(iid, seed, 71u), r5 = Rand(iid, seed, 89u);
     float r6 = Rand(iid, seed, 149u), r7 = Rand(iid, seed, 163u);
     float sizeMul = lerp(0.7, 1.3, r3), speedMul = 1.0, fallMul = 1.0, alphaMul = 1.0;
     float sandVz = 0.0;
     bool fine = false;
-    if (isRain) {
-        fine = Rand(iid, seed, 113u) < lookA.w;
-        if (fine) {
-            sizeMul = lookFog.w * lerp(0.74, 1.28, r4);
-            fallMul = lerp(0.82, 1.08, r3);
-            alphaMul = lookB.w * lookB.x * lerp(0.60, 1.0, Rand(iid, seed, 131u));
-        } else {
-            sizeMul = lerp(0.92, 1.58, r4 * r4);
-            fallMul = lerp(0.98, 1.35, r3);
-            alphaMul = lookB.w * lookB.y * lerp(0.74, 1.0, Rand(iid, seed, 131u));
-        }
-        speedMul = lerp(0.82, 1.18, r5);
-    } else if (styled) {
+    if (styled) {
         // Sizes: the sum of three hashes is close to a bell curve, so its exponential is a
         // log-normal spread: most flakes small, a few several times larger.
         float g = clamp((r3 + r4 + Rand(iid, seed, 97u)) * 2.0 - 3.0, -2.0, 2.2);
@@ -250,14 +237,11 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
 #endif
     p.xy += float2(sway, sway * 0.6 * (r0 - 0.5));
 #if LOOK >= 1
-    if (styled && !isRain) {
+    if (styled) {
         // The streak follows the flutter too, so neighbours are not combed parallel.
         float swayRate = lerp(0.6, 1.4, r3) * 2.4;
         float swayVel = kindB.y * (isSand ? 0.45 : 1.0) * swayRate * cos(t * swayRate + r2 * 6.2831);
         vel += float2(swayVel, swayVel * 0.6 * (r0 - 0.5)) * (isSand ? 0.35 : 0.75);
-    } else if (isRain) {
-        // Slight per-drop turbulence slant so rain streaks are not rigidly parallel.
-        vel += float2(r6 - 0.5, r7 - 0.5) * 42.0;
     }
 #endif
     p.xy = float2(Wrap(p.x, gCamPos.x, B), Wrap(p.y, gCamPos.y, B));
@@ -313,32 +297,20 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
         if (centre.w <= 1.0) return o; // behind the lens
         // Far particles dissolve into the haze; near the lens they go large, soft and faint.
         fogT = exp(-dist * lookA.x);
-        if (isRain) {
-            // Nearer drops become bigger, softer and more transparent.
-            nearSoft = 1.0 - smoothstep(albedo.w * 1.1, albedo.w * 6.5, dist);
-            radius *= 1.0 + 1.25 * nearSoft;
-            alpha *= fogT * lerp(1.0, 0.48, nearSoft);
-        } else {
-            nearSoft = 1.0 - smoothstep(albedo.w * 1.5, albedo.w * 5.0, dist);
-            radius *= 1.0 + 0.6 * nearSoft;
-            alpha *= fogT * lerp(1.0, 0.55, nearSoft);
-        }
+        nearSoft = 1.0 - smoothstep(albedo.w * 1.5, albedo.w * 5.0, dist);
+        radius *= 1.0 + 0.6 * nearSoft;
+        alpha *= fogT * lerp(1.0, 0.55, nearSoft);
         // Never thinner than about a pixel and a half across: a smaller particle keeps that
-        // footprint and fades instead, so fine grain or thin rain does not sparkle/alias.
-        // A rain streak shrinks only in width (1D), whereas a round flake shrinks in 2D.
+        // footprint and fades instead, so fine grain does not sparkle/alias.
         float pxPerUnit = abs(mul(gViewProj, float4(gUp, 0.0)).y) / centre.w * 0.5 * screenInfo.y;
-        float minRadius = (isRain ? 0.68 : 0.72) / max(pxPerUnit, 1e-4);
+        float minRadius = 0.72 / max(pxPerUnit, 1e-4);
         if (radius < minRadius) {
             float q = radius / minRadius;
-            if (isRain) alpha *= max(pow(q, 0.65), 0.45);
-            else if (isSand) alpha *= max(pow(q, 1.15), 0.22);
+            if (isSand) alpha *= max(pow(q, 1.15), 0.22);
             else alpha *= q * q;
             radius = minRadius;
         }
-        if (isRain) {
-            // Streak length tied to fall speed and exposure time.
-            exposure *= lookA.y * lerp(0.72, 1.18, saturate((fallMul - 0.75) / 0.6));
-        } else if (isSand) {
+        if (isSand) {
             // Blowing sand streaks along the wind even for fine grains.
             float windBoost = lerp(0.65, 1.25, saturate(length(vel) / 360.0));
             exposure *= lookA.y * (fine ? 0.78 : 1.05) * windBoost;
@@ -375,37 +347,14 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.uv = float2(c.x * extent / radius, c.y);
     o.shape = float3(len / radius, dist, alpha);
 #if LOOK >= 1
-    o.fx = float2(nearSoft, isRain ? 2.0 : (styled ? 1.0 : 0.0));
+    o.fx = float2(nearSoft, styled ? 1.0 : 0.0);
 #endif
 
     float3 sun = normalize(sunDir.xyz);
     float3 light = ambientColor.rgb + sunColor.rgb * (0.35 + 0.65 * saturate(sun.z));
     float3 col = albedo.rgb * light;
 #if LOOK >= 1
-    if (isRain) {
-        // Rain lit by scene light (local scene colour/lamps + sky/sun forward scatter).
-        float fwd = pow(saturate(dot(-toCam, sun)), 5.0);
-        float3 skyLight = ambientColor.rgb * 1.85 + sunColor.rgb * (0.58 + 1.25 * fwd);
-        if (qualityInfo.y > 0.5) {
-            float2 ndc = centre.xy / max(centre.w, 1e-4);
-            float2 suv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-            if (all(suv >= 0.0) && all(suv <= 1.0)) {
-                float3 sc = sceneColor.SampleLevel(linearClamp, suv, 0).rgb;
-                if (qualityInfo.x > 0.5) {
-                    float2 suv2 = saturate(suv + float2(0.0, -0.025));
-                    sc = 0.6 * sc + 0.4 * sceneColor.SampleLevel(linearClamp, suv2, 0).rgb;
-                }
-                float scLuma = dot(sc, float3(0.2126, 0.7152, 0.0722));
-                // Keep rain readable against dark walls while catching warm lamps and sky.
-                float3 sceneTint = max(sc * 2.0, float3(0.54, 0.58, 0.66));
-                skyLight = lerp(skyLight * lerp(0.86, 1.30, saturate(scLuma * 2.2)),
-                                sceneTint * (1.12 + 0.45 * fwd), 0.42);
-            }
-        }
-        col = albedo.rgb * skyLight * lerp(0.88, 1.25, r5);
-        float3 veil = lookFog.rgb * (ambientColor.rgb * 1.3 + sunColor.rgb * 0.4);
-        col = lerp(col, veil, (1.0 - fogT) * 0.40);
-    } else if (styled) {
+    if (styled) {
         float3 veil = lookFog.rgb * light;
         if (isSand) {
             // Mineral grain colour and brightness variation: pale quartz, golden sand, darker silt.
@@ -439,16 +388,7 @@ float4 PrecipPS(VSOut i) : SV_Target {
     float d = length(float2(x - along, i.uv.y));
 #if LOOK >= 1
     float a;
-    if (i.fx.y > 1.5) {
-        // Soft-edged rain streak: slightly brighter leading head, smooth tapered tail.
-        float tAlong = saturate(along / max(i.shape.x, 0.5));
-        float narrow = lerp(1.0, 0.56, tAlong);
-        float dd = length(float2(x - along, i.uv.y / narrow));
-        float softCore = 1.0 - smoothstep(lerp(0.26, 0.0, i.fx.x), 1.0, dd);
-        float headBoost = 1.0 + 0.42 * exp(-tAlong * 4.0);
-        float fade = pow(saturate(1.0 - along / (i.shape.x + 1.35)), 0.78);
-        a = min(i.shape.z * headBoost, 1.0) * softCore * fade;
-    } else if (i.fx.y > 0.5) {
+    if (i.fx.y > 0.5) {
         // A soft head and a tail that narrows and fades to nothing. Both terms are smooth as
         // the streak shortens to a round flake.
         float narrow = lerp(1.0, 0.45, saturate(along / max(i.shape.x, 0.5)));
@@ -608,14 +548,6 @@ LookStyle look_style(PrecipitationKind kind, uint32_t look, float rate,
         // A heavier fall has a thicker veil behind it.
         s = {two ? 3.4f : 1.8f, 0.9f, 5.6f, 0.00028f + 0.00014f * std::clamp(rate, 0.0f, 2.0f),
              {0.80f, 0.84f, 0.90f}, 0.70f, 0.45f, 0.98f, 1.0f, 0.65f, 1.8f, 1.15f};
-        break;
-    case PrecipitationKind::Rain:
-        // Full, readable wind-driven rain streaks; Standard and High match overall density,
-        // with High using finer, more numerous drops and 2-tap scene lighting.
-        s = {high_quality ? 2.85f : 2.15f, 1.02f, 72.0f,
-             0.00022f + 0.00006f * std::clamp(rate, 0.0f, 2.0f),
-             {0.64f, 0.69f, 0.76f}, high_quality ? 0.72f : 0.62f, high_quality ? 0.68f : 0.76f,
-             0.92f, 1.12f, 0.78f, high_quality ? 5.0f : 4.6f, high_quality ? 0.96f : 1.06f};
         break;
     case PrecipitationKind::Sand:
         // Readable, varied, wind-streaked sand grains; High adds a finer micro-silt layer.
@@ -882,6 +814,7 @@ bool PrecipitationRendererDX11::render(ID3D11DeviceContext* ctx,
     ctx->VSSetShaderResources(0, 6, vs_srvs);
     ctx->PSSetShader(impl_->ps[look].Get(), nullptr, 0);
     ctx->PSSetConstantBuffers(0, 1, cbs);
+    ctx->PSSetSamplers(0, 1, samps);
     ctx->PSSetShaderResources(0, 6, vs_srvs);
 
     ctx->DrawInstanced(6, flakes, 0, 0);

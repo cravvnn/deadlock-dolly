@@ -968,6 +968,7 @@ int main(int argc, char** argv) {
                         100.0 * static_cast<double>(changed_pixels(bare, look0)) /
                             static_cast<double>(frame_px));
             CHECK(h == shot.look0_hash);
+            const bool rain = shot.preset == dolly::weather::Preset::RainStorm;
             for (uint32_t look = 1; look < dolly::env::kPrecipitationLooks; ++look) {
                 const auto px = particles_only(shot.preset, look, 10.6);
                 const size_t drawn = changed_pixels(bare, px);
@@ -984,6 +985,10 @@ int main(int argc, char** argv) {
                             }()),
                             100.0 * static_cast<double>(drawn) / static_cast<double>(frame_px),
                             100.0 * static_cast<double>(moved) / static_cast<double>(frame_px));
+                if (rain) {
+                    CHECK(px == look0); // rain is the same in every look
+                    continue;
+                }
                 CHECK(drawn > frame_px / 500);
                 CHECK(moved > frame_px / 500);
                 // The same replay time draws the same frame; a later one moves the particles.

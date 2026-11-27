@@ -732,8 +732,8 @@ void OverlayPanel::draw_kara_drawer(const EditorSnapshot& s, unsigned tab, bool 
                 for (int i = 0; i < 2; ++i) {
                     if (k::Tab(qualities[i], i == quality, qwidth) && i != quality)
                         d.send(EditorAction::SetWeatherQuality, i);
-                    k::ItemTooltip("Live preview quality. High adds richer rain, splashes and "
-                                   "ripples; exports always render at High.");
+                    k::ItemTooltip("Weather detail for live preview and video exports. High adds "
+                                   "finer sand, reflections and puddle ripples.");
                 }
                 k::EndRow();
                 k::VGap(10);
