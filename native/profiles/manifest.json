@@ -8,7 +8,7 @@
     "citadel/bin/win64/client.dll": {
       "role": "client",
       "reviewed_utc": "2026-11-26",
-      "latest_timestamp": 1795710486,
+      "latest_timestamp": 1795755324,
       "accepted": [
         "c7d068857c617c9c41d2c501865a94d93c52f3081864623ae23146e495f3021b",
         "769bf1e74afd67ab0aa02fa94c0c7eb3c133991d32c43e099289210511551a2b",
@@ -77,11 +77,12 @@
         "4b24981cef32b0ef862aff29f77197ac7857b4dbe7bbfb839dee33b45a655375",
         "822c9422fde4d6b5becd0b94e21a45038d84405da659f82120c4b2835ae93c31",
         "1628ea6d0ddfd801f483c4ab0d392990f9bcf3be55fa87a43461048b3a8246c4",
-        "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680"
+        "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+        "bfbfe6ff6c038eb0d6e4d79e75bd399d303ca7bc1462dec271496dc7f7b31007"
       ],
       "feature_pins": {
         "automatic preload": [
-          "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680"
+          "bfbfe6ff6c038eb0d6e4d79e75bd399d303ca7bc1462dec271496dc7f7b31007"
         ]
       },
       "review_basis": " Build6861: complete/scoped camera consumers, named observer/schema and indexed global/minimap references; changed stock call slots reviewed separately."
@@ -316,6 +317,7 @@
     "deadlock-2026-11-24-6866-complete.json",
     "scenesystem-2026-11-24-6866.json",
     "soundsystem-2026-11-24-6866.json",
-    "deadlock-2026-11-26-6871-complete.json"
+    "deadlock-2026-11-26-6871-complete.json",
+    "deadlock-2026-11-26-6872-complete.json"
   ]
 }

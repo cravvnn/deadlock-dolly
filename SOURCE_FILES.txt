@@ -1453,3 +1453,5 @@ dolly/debug_view.py
 native/profiles/deadlock-2026-11-26-6871-complete.json
 tests/test_debug_view.py
 third_party/cvar_unlocker/unlocker-build-6871.patch
+native/profiles/deadlock-2026-11-26-6872-complete.json
+third_party/cvar_unlocker/unlocker-build-6872.patch

@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "6871 reviewed compatibility profile; one bounded local live check passed (startup, Follow capabilities, four exact seeks, camera path playback, 60-frame Color+Depth/EXR and Players exports; recorded game audio not exercised live).",
+  "description": "6872 reviewed compatibility profile; one bounded local live check passed (startup, Follow capabilities, four exact seeks, camera path playback, 60-frame Color+Depth/EXR, 60-frame Players export, and 24-frame Visibility grid export at tick 64964 with clean return to Normal; recorded game audio not exercised live).",
   "gameinfo_sha256": "bb537c9c945c6376ea2e8bba6f2a6c4bf98a715af32786280f6cda2f3b89d70f",
   "modules": {
-    "citadel/bin/win64/client.dll": "ea3f946a289558dce252850ebb2c45748a7cedc4634041569ae2b4487465d680",
+    "citadel/bin/win64/client.dll": "bfbfe6ff6c038eb0d6e4d79e75bd399d303ca7bc1462dec271496dc7f7b31007",
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7"
   },
-  "unlocker_server_sha256": "72d2699f882ba86118c5122c67d86ca7782981678a57e041b8564cf129741aca",
+  "unlocker_server_sha256": "9d7856cfc39de36e6c0debec8d5ba877d9955e058d991d7bdd202db9dc42e223",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "79b8f885d86dec21fb9c902266e9daca8f20da42",
-  "stock_gameinfo_depot": "1422456_618142853395406110",
-  "stock_provenance_sha256": "3e274b3e762285ad102c3625e2fce4e042fbfb84f30cc08998e08fb815757f2f",
+  "stock_gameinfo_depot": "1422456_7773707049820346427",
+  "stock_provenance_sha256": "46d28215671a0effb354842ccdefdbc7d8a4977b23bc26745342fd9967b05eb5",
   "configuration_modules": {
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7",
