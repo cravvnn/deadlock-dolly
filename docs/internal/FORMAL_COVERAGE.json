@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "36765d924d8ba454bed967d9303d75e1c2c651e095efa5b492319bd64d57571a",
+      "sha256": "d97491ad417172357b4e491d20c39e860011f6e8889d92a006ecb3fe282f4d3a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -14625,6 +14625,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.64-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.7-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20645,7 +20650,7 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 597,
+    "metadata/configuration/documentation input": 598,
     "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
