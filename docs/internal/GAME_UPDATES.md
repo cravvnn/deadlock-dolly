@@ -5,6 +5,26 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 27 build 6877 review
+
+Build 6877 changes `client.dll`, `server.dll` and the Steam depot manifests;
+`engine2.dll`, `tier0.dll`, `scenesystem.dll`, `soundsystem.dll`,
+`resourcesystem.dll`, `rendersystemdx11.dll`, `filesystem_stdio.dll` and the
+stock `gameinfo.gi`, cfg, video and UI payloads are unchanged from build 6875.
+Reviewed client owner rows were re-mapped and matched with exact masked
+bodies; the indexed minimap jump table and consumed mid-function sites were
+requalified individually. The exact-server unlocker was rebuilt against the
+unchanged 6866/6871/6873/6875 Tier0 binary
+(`0x2bc6580`; slots `0x9c0ad8`/`0x9c0ae4`/`0x9c2c40`), passing 3 compiled suites and 1281
+actual-function pair/table checks; the 6875 predecessor refuses the new pair.
+
+One bounded local check passed on build 6877: startup, Follow capabilities,
+four exact seeks, camera path playback, a 60-frame Color and paired Depth/EXR
+take, a 60-frame Players export with full decode, and a 24-frame Visibility
+grid take at tick 64964 with clean return to Normal, with normal exit,
+configuration and runtime restored and no new crash. Recorded game audio was
+not exercised live. This does not certify every replay, recording mode or driver.
+
 ## November 26 build 6875 review
 
 Build 6875 changes `client.dll`, `server.dll` and the Steam depot manifests;

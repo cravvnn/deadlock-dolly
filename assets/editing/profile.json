@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "6875 reviewed compatibility; bounded live check passed (startup, Follow, seeks, path, Color+Depth+EXR, Players POV, Visibility grid).",
+  "description": "6877 reviewed compatibility; bounded live check passed (startup, Follow, seeks, path, Color+Depth+EXR, Players POV, Visibility grid).",
   "gameinfo_sha256": "bb537c9c945c6376ea2e8bba6f2a6c4bf98a715af32786280f6cda2f3b89d70f",
   "modules": {
-    "citadel/bin/win64/client.dll": "c255f8ad73e6a17f872f1f75a87b541bb58fceb4672f9ec87c04849ff7f4379f",
+    "citadel/bin/win64/client.dll": "4b88eb5a06a76cce96b0bf88a4dae85cfe5063d66c19898cb55173b3a66a01d5",
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7"
   },
-  "unlocker_server_sha256": "bf34be9b0d410d249913285a84a26e9cd930a2a087cc44acb349f5b05d7a8407",
+  "unlocker_server_sha256": "73633612bc42aa2d8049fe374c112da7083b452d3e926ca3d45fdfde171980d3",
   "video_sha256": "9d2366e991da6f2a58d2015897b63a1b7934eaa7db482664a7e883844867cc10",
   "cfg_manifest_sha256": "84b104784fa54664738479ce86576a5d2de41988ebd4c4232493acf6d3ba815b",
   "stock_gameinfo_sha1": "79b8f885d86dec21fb9c902266e9daca8f20da42",
-  "stock_gameinfo_depot": "1422456_1486913882346744851",
-  "stock_provenance_sha256": "1a555bd9ad4e0b57b98a5460a05803d0bd93c3de757255ab45469bed3a801df8",
+  "stock_gameinfo_depot": "1422456_6510831729605887078",
+  "stock_provenance_sha256": "35b5fc166c76ce05c66694a1724eb1aa0ecc3b3acb6c2e826803bb62591af76e",
   "configuration_modules": {
     "bin/win64/engine2.dll": "761acbbdeb00fbd16fb4749c9b8e7848db14477432c04bc966d1b43b2d65387f",
     "bin/win64/tier0.dll": "695535d80ee3904159f84633e3afcbaae65426ba9748f9f2fd38a16e83422ca7",
