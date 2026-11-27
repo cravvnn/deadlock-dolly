@@ -173,13 +173,13 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     if (isRain) {
         fine = Rand(iid, seed, 113u) < lookA.w;
         if (fine) {
-            sizeMul = lookFog.w * lerp(0.68, 1.25, r4);
-            fallMul = lerp(0.78, 1.05, r3);
-            alphaMul = lookB.w * lookB.x * lerp(0.50, 0.95, Rand(iid, seed, 131u));
+            sizeMul = lookFog.w * lerp(0.74, 1.28, r4);
+            fallMul = lerp(0.82, 1.08, r3);
+            alphaMul = lookB.w * lookB.x * lerp(0.60, 1.0, Rand(iid, seed, 131u));
         } else {
-            sizeMul = lerp(0.85, 1.55, r4 * r4);
+            sizeMul = lerp(0.92, 1.58, r4 * r4);
             fallMul = lerp(0.98, 1.35, r3);
-            alphaMul = lookB.w * lookB.y * lerp(0.65, 1.0, Rand(iid, seed, 131u));
+            alphaMul = lookB.w * lookB.y * lerp(0.74, 1.0, Rand(iid, seed, 131u));
         }
         speedMul = lerp(0.82, 1.18, r5);
     } else if (styled) {
@@ -269,16 +269,26 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     float2 uv = MapUV(p.xy);
     if (kind == KIND_SAND) {
 #if LOOK >= 1
-        // Gentle saltation turbulence rather than snow-like vertical bobbing.
+        // Saltation near the street plus suspended wind-driven grains in the camera band.
         sandVz = volume.z * 0.11 * cos(t * 2.8 + r3 * 6.2831) + (r7 - 0.5) * 26.0;
-        float heightPow = fine ? (r2 * r2) : (r2 * r2 * r2);
         float street = OnMap(uv) ? streetZMap.SampleLevel(linearClamp, uv, 0) : gCamPos.z - 64.0;
-        p.z = street + 3.0 + volume.z * (heightPow * 0.88 + 0.05 * sin(t * 2.8 + r3 * 6.2831) + 0.04);
+        if (r5 < 0.45) {
+            float bandH = min(H * 0.65, 900.0);
+            p.z = Wrap(r2 * bandH * 32.0 + t * 8.0 * (r7 - 0.5), gCamPos.z, bandH);
+            if (p.z < street + 4.0) alpha = 0.0;
+            if (OnMap(uv) && LoadMap(topsMap, uv) > p.z + 8.0) alpha = 0.0;
+            alpha *= 1.0 - smoothstep(volume.z * 0.9, volume.z * 3.4, p.z - street);
+            alpha *= 1.0 - smoothstep(0.36 * bandH, 0.5 * bandH, abs(p.z - gCamPos.z));
+        } else {
+            float heightPow = fine ? pow(max(r2, 1e-4), 1.35) : pow(max(r2, 1e-4), 1.65);
+            p.z = street + 4.0 + volume.z * (heightPow * 1.15 + 0.05 * sin(t * 2.8 + r3 * 6.2831) + 0.04);
+        }
+        alpha *= sin(3.14159265 * lifeFrac) * saturate(0.45 + carried * 0.75);
 #else
         float street = OnMap(uv) ? streetZMap.SampleLevel(linearClamp, uv, 0) : gCamPos.z - 64.0;
         p.z = street + 4.0 + volume.z * (r2 * r2 * 0.85 + 0.1 * sin(t * 3.1 + r3 * 6.2831) + 0.05);
-#endif
         alpha *= sin(3.14159265 * lifeFrac) * saturate(0.2 + carried * 0.9);
+#endif
         if (OnMap(uv) && fluidState.SampleLevel(linearClamp, uv, 0).w > 0.65) alpha = 0.0;
     } else {
         // Sheltered under a roof or deck, or already landed: solid lies above the flake.
@@ -317,10 +327,12 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
         // footprint and fades instead, so fine grain or thin rain does not sparkle/alias.
         // A rain streak shrinks only in width (1D), whereas a round flake shrinks in 2D.
         float pxPerUnit = abs(mul(gViewProj, float4(gUp, 0.0)).y) / centre.w * 0.5 * screenInfo.y;
-        float minRadius = (isRain ? 0.65 : 0.72) / max(pxPerUnit, 1e-4);
+        float minRadius = (isRain ? 0.68 : 0.72) / max(pxPerUnit, 1e-4);
         if (radius < minRadius) {
             float q = radius / minRadius;
-            alpha *= isRain ? max(q, 0.25) : (q * q);
+            if (isRain) alpha *= max(pow(q, 0.65), 0.45);
+            else if (isSand) alpha *= max(pow(q, 1.15), 0.22);
+            else alpha *= q * q;
             radius = minRadius;
         }
         if (isRain) {
@@ -373,7 +385,7 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     if (isRain) {
         // Rain lit by scene light (local scene colour/lamps + sky/sun forward scatter).
         float fwd = pow(saturate(dot(-toCam, sun)), 5.0);
-        float3 skyLight = ambientColor.rgb * 1.55 + sunColor.rgb * (0.48 + 1.15 * fwd);
+        float3 skyLight = ambientColor.rgb * 1.85 + sunColor.rgb * (0.58 + 1.25 * fwd);
         if (qualityInfo.y > 0.5) {
             float2 ndc = centre.xy / max(centre.w, 1e-4);
             float2 suv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -385,31 +397,31 @@ VSOut PrecipVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
                 }
                 float scLuma = dot(sc, float3(0.2126, 0.7152, 0.0722));
                 // Keep rain readable against dark walls while catching warm lamps and sky.
-                float3 sceneTint = max(sc * 1.85, float3(0.28, 0.31, 0.36));
-                skyLight = lerp(skyLight * lerp(0.75, 1.25, saturate(scLuma * 2.2)),
-                                sceneTint * (1.05 + 0.45 * fwd), 0.52);
+                float3 sceneTint = max(sc * 2.0, float3(0.54, 0.58, 0.66));
+                skyLight = lerp(skyLight * lerp(0.86, 1.30, saturate(scLuma * 2.2)),
+                                sceneTint * (1.12 + 0.45 * fwd), 0.42);
             }
         }
-        col = albedo.rgb * skyLight * lerp(0.84, 1.22, r5);
+        col = albedo.rgb * skyLight * lerp(0.88, 1.25, r5);
         float3 veil = lookFog.rgb * (ambientColor.rgb * 1.3 + sunColor.rgb * 0.4);
-        col = lerp(col, veil, (1.0 - fogT) * 0.45);
+        col = lerp(col, veil, (1.0 - fogT) * 0.40);
     } else if (styled) {
         float3 veil = lookFog.rgb * light;
         if (isSand) {
             // Mineral grain colour and brightness variation: pale quartz, golden sand, darker silt.
-            float3 paleQuartz = float3(1.04, 0.94, 0.76);
-            float3 goldenSand = float3(0.90, 0.72, 0.46);
-            float3 darkSilt   = float3(0.64, 0.49, 0.34);
+            float3 paleQuartz = float3(1.16, 1.04, 0.84);
+            float3 goldenSand = float3(0.96, 0.76, 0.48);
+            float3 darkSilt   = float3(0.58, 0.44, 0.30);
             float3 grainAlb = r6 < 0.5 ? lerp(darkSilt, goldenSand, r6 * 2.0)
                                        : lerp(goldenSand, paleQuartz, (r6 - 0.5) * 2.0);
-            float glint = (r6 > 0.78 ? 1.0 : 0.0) * pow(saturate(dot(-toCam, sun)), 10.0) * 0.55;
-            col = grainAlb * light * lerp(0.66, 1.24, r7) + sunColor.rgb * glint;
-            if (fine) col = lerp(col, veil, 0.18);
+            float glint = (r6 > 0.75 ? 1.0 : 0.0) * pow(saturate(dot(-toCam, sun)), 8.0) * 0.65;
+            col = grainAlb * light * lerp(0.72, 1.30, r7) + sunColor.rgb * glint;
+            if (fine) col = lerp(col, veil, 0.10);
         } else {
             col *= lerp(0.84, 1.08, r4); // grain-to-grain tone
             if (fine) col = lerp(col, veil, 0.12);
         }
-        col = lerp(col, veil, (1.0 - fogT) * 0.6);
+        col = lerp(col, veil, (1.0 - fogT) * (isSand ? 0.42 : 0.6));
     }
 #endif
     if (kind == KIND_ASH && r1 > 1.0 - kindB.w) col = float3(1.6, 0.55, 0.16) * lerp(0.6, 1.2, r2);
@@ -428,13 +440,13 @@ float4 PrecipPS(VSOut i) : SV_Target {
 #if LOOK >= 1
     float a;
     if (i.fx.y > 1.5) {
-        // Thin, soft-edged rain streak: slightly brighter leading head, smooth tapered tail.
+        // Soft-edged rain streak: slightly brighter leading head, smooth tapered tail.
         float tAlong = saturate(along / max(i.shape.x, 0.5));
-        float narrow = lerp(1.0, 0.42, tAlong);
+        float narrow = lerp(1.0, 0.56, tAlong);
         float dd = length(float2(x - along, i.uv.y / narrow));
-        float softCore = 1.0 - smoothstep(lerp(0.18, 0.0, i.fx.x), 1.0, dd);
-        float headBoost = 1.0 + 0.40 * exp(-tAlong * 4.5);
-        float fade = pow(saturate(1.0 - along / (i.shape.x + 0.90)), 1.05);
+        float softCore = 1.0 - smoothstep(lerp(0.26, 0.0, i.fx.x), 1.0, dd);
+        float headBoost = 1.0 + 0.42 * exp(-tAlong * 4.0);
+        float fade = pow(saturate(1.0 - along / (i.shape.x + 1.35)), 0.78);
         a = min(i.shape.z * headBoost, 1.0) * softCore * fade;
     } else if (i.fx.y > 0.5) {
         // A soft head and a tail that narrows and fades to nothing. Both terms are smooth as
@@ -598,16 +610,18 @@ LookStyle look_style(PrecipitationKind kind, uint32_t look, float rate,
              {0.80f, 0.84f, 0.90f}, 0.70f, 0.45f, 0.98f, 1.0f, 0.65f, 1.8f, 1.15f};
         break;
     case PrecipitationKind::Rain:
-        // Thin, soft-edged, depth-fading streaks; High adds a denser fine rain sheet.
-        s = {high_quality ? 2.4f : 1.35f, 0.96f, 68.0f,
-             0.00032f + 0.00009f * std::clamp(rate, 0.0f, 2.0f),
-             {0.62f, 0.67f, 0.74f}, high_quality ? 0.72f : 0.68f, 0.68f, 0.88f, 1.05f, 0.55f,
-             3.25f, 0.92f};
+        // Full, readable wind-driven rain streaks; Standard and High match overall density,
+        // with High using finer, more numerous drops and 2-tap scene lighting.
+        s = {high_quality ? 2.85f : 2.15f, 1.02f, 72.0f,
+             0.00022f + 0.00006f * std::clamp(rate, 0.0f, 2.0f),
+             {0.64f, 0.69f, 0.76f}, high_quality ? 0.72f : 0.62f, high_quality ? 0.68f : 0.76f,
+             0.92f, 1.12f, 0.78f, high_quality ? 5.0f : 4.6f, high_quality ? 0.96f : 1.06f};
         break;
     case PrecipitationKind::Sand:
-        // Finer, wind-streaked sand grains; High adds a denser micro-silt layer.
-        s = {(two ? 5.0f : 2.4f) * (high_quality ? 1.5f : 1.0f), 1.05f, 9.5f, 0.00055f,
-             {0.76f, 0.62f, 0.42f}, 0.82f, 0.38f, 0.86f, 0.76f, 0.54f, 2.6f, 1.02f};
+        // Readable, varied, wind-streaked sand grains; High adds a finer micro-silt layer.
+        s = {(two ? 5.0f : 2.4f) * (high_quality ? 1.3f : 1.0f), 1.25f, 11.5f, 0.00038f,
+             {0.76f, 0.62f, 0.42f}, high_quality ? 0.74f : 0.68f, 0.58f, 0.92f, 0.96f, 0.66f,
+             high_quality ? 3.9f : 3.6f, 1.18f};
         break;
     case PrecipitationKind::Ash:
         s = {two ? 3.1f : 1.7f, 0.9f, 4.0f, 0.00045f,

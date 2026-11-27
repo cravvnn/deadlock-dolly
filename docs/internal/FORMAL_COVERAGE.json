@@ -10122,7 +10122,7 @@
     },
     {
       "path": "native/src/dolly_precip_dx11.cpp",
-      "sha256": "aebedaeeb03bdb0ce36452101d7e7f8b465a20b606ed9155155b5d028c90f643",
+      "sha256": "ab89b1f70120d1f71bdfef14c32bc7a3bf870a840d26ac90a51efd4644b82628",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
