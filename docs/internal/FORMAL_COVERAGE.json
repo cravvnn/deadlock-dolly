@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "7cc749956719bbc0e64d4acdbfd6504b91051fbec10dfcf9893bceec85545461",
+      "sha256": "f91e1c7bb0cfde4235cfdb48530c8913ea91115fc68e6c6571a802c543cb96d6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -155,7 +155,8 @@
       "reconciliation_20261123b_version": "0.7.53-beta version string only.",
       "reconciliation_20261124": "2026-11-24: version string only.",
       "reconciliation_20261127_6877": "2026-11-27: bump version to 0.7.67-beta for Deadlock build 6877",
-      "reconciliation_20261127_6880": "2026-11-27: bump version to 0.7.68-beta for Deadlock build 6880"
+      "reconciliation_20261127_6880": "2026-11-27: bump version to 0.7.68-beta for Deadlock build 6880",
+      "reconciliation_20261127_6882": "2026-11-27: bump version to 0.7.69-beta for Deadlock build 6882"
     },
     {
       "path": "dolly/__main__.py",
@@ -194,7 +195,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "82cb90966a72dbb2701edc96a27d6c332c7c4f7a342cbca0abd59f20a7333544",
+      "sha256": "b0ac79a69bd8d0494e780d0ed46d126f9cb5c5b17c12031df35dad4a779dce39",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -224,7 +225,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "dolly/assert_watcher.py",
@@ -2381,7 +2383,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "0f75049a76e18e880fdd6fe9efadb604325d9a28c325e605ff45f1978652d767",
+      "sha256": "2aebb7a36676c16b878795ccd2ea82f6cb161b00bb5473e048ef557421754a81",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -2417,7 +2419,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "dolly/game_installation.py",
@@ -8620,7 +8623,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "318a1ddeb365518b4f6bbae4c1f7c2304a0d7c1f87c488686f07997e16a6450e",
+      "sha256": "7bf67f1ecc13f859ff4cbf83b692a51ffdbe8d7c0372f6acc00b845b4cc80aaf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8645,7 +8648,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "native/include/dolly_sound_capture.hpp",
@@ -9177,7 +9181,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "5eef3be778d1c64b1ba54e49b5cf960463fb8fcde7e4ad4c5d99b473aa2920ff",
+      "sha256": "420abff17beedf3f6c5d4bbf70e4efd56f1888707908ce6bf01795325427ce1a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9200,7 +9204,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_compat_runtime.hpp",
@@ -9230,7 +9235,7 @@
     },
     {
       "path": "native/src/dolly_confetti.cpp",
-      "sha256": "5cb8722ffcc602a43535595a56d87489d75136b9f4fdbb68958e47e00a37472e",
+      "sha256": "decb2148ae75fa46b1e4a2e65f441081115309307ae5a7cf8e56c5ecc0f37988",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9260,7 +9265,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_curve_panel.cpp",
@@ -9533,7 +9539,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "df249a7ca726d23ea8073b71a4f7e50da22eff7b5b52ab027a34ec7762fc4dc9",
+      "sha256": "b8fe220a4c18212be840e458f6cbc82776a0805f705c2ced96ddcce667334126",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9555,7 +9561,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "native/src/dolly_game_audio.cpp",
@@ -11166,7 +11173,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "18914834fd80b9b2178158750a1337375ac323a6e9df7614571e59bbe3a11556",
+      "sha256": "92759cc51db3ed29d09014715d3be33edd1fa33894c8e91ed9ab011a7f920490",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11189,7 +11196,8 @@
       "reconciliation_20261126_6873": "2026-11-26: reviewed Deadlock build 6873 compatibility data; see commit log",
       "reconciliation_20261126_6875": "2026-11-26: reviewed Deadlock build 6875 compatibility data; see commit log",
       "reconciliation_20261127_6877": "2026-11-27: reviewed Deadlock build 6877 compatibility data; see commit log",
-      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log"
+      "reconciliation_20261127_6880": "2026-11-27: reviewed Deadlock build 6880 compatibility data; see commit log",
+      "reconciliation_20261127_6882": "2026-11-27: reviewed Deadlock build 6882 compatibility data; see commit log"
     },
     {
       "path": "native/src/native_minimap_win.hpp",
@@ -14661,6 +14669,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "docs/RELEASE_NOTES_0.7.69-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "docs/RELEASE_NOTES_0.7.7-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -18080,6 +18093,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "native/profiles/deadlock-2026-11-27-6882-complete.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19935,6 +19953,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "third_party/cvar_unlocker/unlocker-build-6882.patch",
+      "category": "external dependency/resource",
+      "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
       "path": "third_party/cvar_unlocker/unlocker-shutdown.patch",
       "category": "external dependency/resource",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -20701,12 +20724,12 @@
     }
   ],
   "export_categories": {
-    "metadata/configuration/documentation input": 603,
+    "metadata/configuration/documentation input": 605,
     "implementation/tool": 347,
     "asset/compiled helper input": 29,
     "formal spec/interface": 169,
     "test/support input": 107,
-    "external dependency/resource": 211
+    "external dependency/resource": 212
   },
   "unclassified": 0,
   "full_program_formal_verified": false,

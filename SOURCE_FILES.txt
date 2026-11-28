@@ -1455,6 +1455,7 @@ docs/RELEASE_NOTES_0.7.64-beta.md
 docs/RELEASE_NOTES_0.7.66-beta.md
 docs/RELEASE_NOTES_0.7.67-beta.md
 docs/RELEASE_NOTES_0.7.68-beta.md
+docs/RELEASE_NOTES_0.7.69-beta.md
 dolly/debug_view.py
 native/profiles/deadlock-2026-11-26-6871-complete.json
 tests/test_debug_view.py
@@ -1469,3 +1470,5 @@ native/profiles/deadlock-2026-11-27-6877-complete.json
 third_party/cvar_unlocker/unlocker-build-6877.patch
 native/profiles/deadlock-2026-11-27-6880-complete.json
 third_party/cvar_unlocker/unlocker-build-6880.patch
+native/profiles/deadlock-2026-11-27-6882-complete.json
+third_party/cvar_unlocker/unlocker-build-6882.patch
