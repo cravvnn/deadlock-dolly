@@ -66,7 +66,41 @@ int main() {
     require(engine && engine->active == 0x732c0 && engine->filename == 0x73310);
     const auto* cvar = dolly_remote::detail::cvar_layout(data, "modern_6801");
     require(cvar && cvar->data_slot == 41 && cvar->extended && cvar->setter == 0x20fea0);
+    require(!cvar->season2_types);
     require(dolly_remote::detail::engine_layout(data, "missing") == nullptr);
+
+    // Season 2 rows carry an optional ninth token. A legacy eight-token row is
+    // still accepted and infers the representation from its reviewed setter.
+    static const char* kSeason2 =
+        "DOLLY_DEFINITIONS 1\n"
+        "abi 4\n"
+        "+cvar season2_6866 0x313208 0x20fd10 0x6c710 0x6c650 41 1\n"
+        "+cvar season2_6861 0x313208 0x20fe50 0x6c710 0x6c650 41 1\n"
+        "+cvar season2_6853 0x313208 0x20ffa0 0x6c6b0 0x6c5f0 41 1\n"
+        "+cvar legacy_6779 0x313208 0x20fe80 0x6c6b0 0x6c5f0 41 1\n"
+        "+cvar explicit_legacy 0x313208 0x20fd10 0x6c710 0x6c650 41 1 0\n"
+        "+cvar explicit_season2 0x313208 0x20fe80 0x6c6b0 0x6c5f0 43 0 1\n"
+        "end\n";
+    dolly_remote::Definitions season2;
+    require(parse(kSeason2, season2));
+    require(season2.cvar_layout_count == 6);
+    require(dolly_remote::detail::cvar_layout(season2, "season2_6866")->season2_types);
+    require(dolly_remote::detail::cvar_layout(season2, "season2_6861")->season2_types);
+    require(dolly_remote::detail::cvar_layout(season2, "season2_6853")->season2_types);
+    require(!dolly_remote::detail::cvar_layout(season2, "legacy_6779")->season2_types);
+    require(!dolly_remote::detail::cvar_layout(season2, "explicit_legacy")->season2_types);
+    require(dolly_remote::detail::cvar_layout(season2, "explicit_season2")->season2_types);
+    require(dolly_remote::detail::cvar_layout(season2, "explicit_season2")->data_slot == 43);
+
+    // A bad optional token, or a tenth token, refuses the whole document.
+    const char* bad_cvar_rows[] = {
+        "DOLLY_DEFINITIONS 1\nabi 4\n+cvar x 0x1 0x2 0x3 0x4 41 1 2\nend\n",
+        "DOLLY_DEFINITIONS 1\nabi 4\n+cvar x 0x1 0x2 0x3 0x4 41 1 -1\nend\n",
+        "DOLLY_DEFINITIONS 1\nabi 4\n+cvar x 0x1 0x2 0x3 0x4 41 1 0 1\nend\n",
+    };
+    dolly_remote::Definitions rejected_cvar;
+    for (const char* text : bad_cvar_rows)
+        require(!parse(text, rejected_cvar));
 
     // An empty document is valid and simply carries no entries.
     dolly_remote::Definitions empty;

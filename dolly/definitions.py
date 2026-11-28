@@ -78,6 +78,10 @@ ENGINE_LAYOUT_FIELDS = (
     "paused", "seeking", "tick", "filename",
 )
 TIER0_LAYOUT_FIELDS = ("table", "setter", "find", "data")
+# Optional per-layout cvar value typing. The compact bridge document only emits
+# this as a trailing token when a layout explicitly carries it, so every
+# existing eight-token `abi 4` document and shipped parser stays valid.
+TIER0_LAYOUT_OPTIONAL_FIELDS = ("season2_types",)
 
 
 class DefinitionsError(RuntimeError):
@@ -221,7 +225,8 @@ def _layout(value, field: str, fields: tuple[str, ...]) -> dict[str, int]:
 def _tier0_layout(value, field: str) -> dict[str, int]:
     data = _object(value, field)
     fields = TIER0_LAYOUT_FIELDS + ("data_slot", "extended")
-    if set(data) != set(fields):
+    optional = TIER0_LAYOUT_OPTIONAL_FIELDS
+    if not set(fields) <= set(data) or set(data) - set(fields) - set(optional):
         raise DefinitionsError(f"definitions: {field} has unexpected fields")
     layout = {name: _number(data[name], f"{field}.{name}") for name in TIER0_LAYOUT_FIELDS}
     if data["data_slot"] not in (41, 43) or type(data["data_slot"]) is not int:
@@ -230,6 +235,12 @@ def _tier0_layout(value, field: str) -> dict[str, int]:
         raise DefinitionsError(f"definitions: {field}.extended must be boolean")
     layout["data_slot"] = data["data_slot"]
     layout["extended"] = int(data["extended"])
+    for name in optional:
+        if name not in data:
+            continue
+        if type(data[name]) is not bool:
+            raise DefinitionsError(f"definitions: {field}.{name} must be boolean")
+        layout[name] = int(data[name])
     return layout
 
 
@@ -547,9 +558,14 @@ def native_document(document: Definitions | None = None) -> str:
             profile.sha256, profile.image_size, profile.layout))
     for name in sorted(data.tier0_layouts):
         layout = data.tier0_layouts[name]
-        lines.append("+cvar %s %s %d %d" % (
+        line = "+cvar %s %s %d %d" % (
             name, " ".join(hex(layout[field]) for field in TIER0_LAYOUT_FIELDS),
-            layout["data_slot"], int(layout["extended"])))
+            layout["data_slot"], int(layout["extended"]))
+        # Omitted for documents that do not opt in, so the compact format stays
+        # byte-compatible with existing published feeds and shipped parsers.
+        if "season2_types" in layout:
+            line += " %d" % layout["season2_types"]
+        lines.append(line)
     for profile in data.tier0_profiles:
         lines.append("+tier0 %s %#x %s" % (
             profile.sha256, profile.image_size, profile.layout))

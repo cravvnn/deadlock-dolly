@@ -952,6 +952,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     static bool lens_pinned = false;
     static unsigned fault = 0;
     static unsigned first_fault_code = 0;
+    static unsigned first_fault_effect_error = 0;
     static char first_fault_message[192]{};
     static std::uint32_t previous_mode = 0;
     // The shot's classic particles from the last camera command, so they keep falling
@@ -1018,11 +1019,17 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
             if (!keep_particles)
                 confetti::disable();
         }
-        // Keep the first specific fault message: the per-frame fallback on the
-        // next view would otherwise replace it before the editor reads it.
+        // A successful restore clears the effect owner's error, but a fault that
+        // stopped the shot must still report why the cvars were refused on both
+        // the faulting frame and follow-up views while the command stays faulted.
+        const unsigned effect_error_before_restore = gEffects.error;
+        // Keep the first specific fault message and effect error: the per-frame
+        // fallback on the next view would otherwise replace them before the
+        // editor reads them.
         if (state == State::Fault && error) {
             if (first_fault_code != error) {
                 first_fault_code = error;
+                first_fault_effect_error = effect_error_before_restore;
                 std::snprintf(first_fault_message, sizeof(first_fault_message), "%s", message);
             } else if (first_fault_message[0]) {
                 message = first_fault_message;
@@ -1035,16 +1042,27 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         // until the shot is stopped, faulted or released.
         if (state == State::Fault || state == State::Stopped || state == State::Unsupported)
             player_capture::set_hidden_handle(0, 100 + unsigned(state));
+        char effect_restore_message[192]{};
         if ((state == State::Fault || state == State::Stopped) && !gEffects.restore()) {
             state = State::Fault;
             error = 36;
-            message = "Native effect restoration failed; retry Stop / restore.";
+            if (gEffects.detail[0]) {
+                std::snprintf(effect_restore_message, sizeof(effect_restore_message),
+                              "Native effect restoration failed: %s", gEffects.detail);
+                message = effect_restore_message;
+            } else {
+                message = "Native effect restoration failed; retry Stop / restore.";
+            }
         }
         status.effect_count = gEffects.count;
         gGameplayCameraActive.store(
             !error && command && !(command->wire.flags & kGamePov) &&
             (state == State::Armed || state == State::Playing || state == State::Completed));
-        status.effect_error = gEffects.error;
+        const unsigned reported_effect_error =
+            effect_error_before_restore ? effect_error_before_restore : first_fault_effect_error;
+        status.effect_error = gEffects.error
+                                  ? gEffects.error
+                                  : (state == State::Fault ? reported_effect_error : 0);
         status.effect_frames = gEffects.frames;
         status.effect_phase = gEffects.phase;
         bool editor_ready = demo_ok && demo.playing && !demo.seeking && view_ok &&
@@ -1120,6 +1138,7 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         status.ack_command = seen;
         fault = 0;
         first_fault_code = 0;
+        first_fault_effect_error = 0;
         first_fault_message[0] = 0;
         if (c.mode == std::uint32_t(Mode::Manual)) {
             manual_pose = command->has_manual_pose ? command->manual_pose
@@ -1436,8 +1455,10 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
         // The frozen effect phase stays owned until an explicit Stop/Release.
         if (!gEffects.apply(gEffects.shot, gEffects.phase)) {
             fault = 35;
-            finish(State::Fault, fault,
-                   "Could not maintain the selected camera effects during manual flight.");
+            char effect_fault[192]{};
+            std::snprintf(effect_fault, sizeof(effect_fault), "Native DOF hold failed: %s",
+                          gEffects.detail[0] ? gEffects.detail : "unknown cvar failure");
+            finish(State::Fault, fault, effect_fault);
             return;
         }
         float xyz[3], angles[3];
@@ -1656,9 +1677,11 @@ static void on_view(void* self, std::uintptr_t caller) noexcept {
     // Apply the same phase as XYZ/angles, using the native typed setter.
     if (!gEffects.apply(command->shot, phase)) {
         fault = 35;
-        finish(
-            State::Fault, fault,
-            "Native DOF setting was unavailable, deferred or clamped; shot stopped and originals restored.");
+        char effect_fault[192]{};
+        std::snprintf(effect_fault, sizeof(effect_fault), "Native DOF failed: %s; %s",
+                      gEffects.detail[0] ? gEffects.detail : "unknown cvar failure",
+                      gEffects.count ? "restoring originals." : "no cvar originals were held.");
+        finish(State::Fault, fault, effect_fault);
         return;
     }
     float xyz[3], angles[3];
@@ -2297,6 +2320,10 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         gModule = module;
         QueryPerformanceFrequency(&gFrequency);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        // No later view can use the interface; start the next load from the
+        // legacy representation rather than a stale Season-2 selection.
+        gCvarSeason2Types = false;
     }
     return TRUE;
 }

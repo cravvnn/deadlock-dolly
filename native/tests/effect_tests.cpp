@@ -19,6 +19,27 @@ int main(int argc, char** argv) {
             check(effect_cvar_type(13, true) == 15);
             for (unsigned old_type : {0u, 3u, 7u, 13u})
                 check(effect_cvar_type(old_type, false) == old_type);
+            // Season 2 tier0 setters: 6853, 6861/6864 and 6866 through 6882.
+            constexpr std::uintptr_t base = 0x180000000;
+            for (std::uintptr_t setter : {0x20ffa0u, 0x20fe50u, 0x20fd10u})
+                check(season2_cvar_types(base, base + setter));
+            check(!season2_cvar_types(base, base + 0x20fd40));
+            check(!season2_cvar_types(base, base + 0x20fea0));
+            check(!season2_cvar_types(base, base + 0x20fe80));
+            check(!season2_cvar_types(base, base + 0x20ec60));
+            check(!season2_cvar_types(0, 0x20fd10));
+            // Relief normalization: legacy and Season-2 enums never alias the
+            // owner's internal bool/int32/float representations by accident.
+            check(relief_cvar_type(0, false) == 0);
+            check(relief_cvar_type(3, false) == 3);
+            check(relief_cvar_type(7, false) == 2);
+            for (unsigned legacy_bad : {1u, 2u, 5u, 9u, 13u, 15u, 0xffffu})
+                check(relief_cvar_type(legacy_bad, false) == 0xffff);
+            check(relief_cvar_type(0, true) == 0);
+            check(relief_cvar_type(5, true) == 3);
+            check(relief_cvar_type(9, true) == 2);
+            for (unsigned season2_bad : {1u, 2u, 3u, 7u, 13u, 15u, 0xffffu})
+                check(relief_cvar_type(season2_bad, true) == 0xffff);
             const std::array<double, 4> ranges{-150, 20, 250, 2500};
             check(effective_dof_ranges(ranges, true, false) == std::array<double, 4>{});
             check(effective_dof_ranges(ranges, false, false) == ranges);

@@ -68,13 +68,12 @@ LOG = logging.getLogger("dolly")
 # enables it for the session and forces one reload of the DOF shaders.
 DOF_SHADER_SETTINGS = ("mat_disable_dynamic_shader_compile",)
 DOF_SHADER_RELOAD = "mat_forcereloadshaders dof"
-# Game-bin DLLs the engine needs to compile the Native DOF material at runtime.
-# ``vfx_dx11.dll`` is the DX11 dynamic shader compiler and it statically imports
-# ``slang.dll``; when either is absent the engine cannot compile the developer
-# DOF material and substitutes its error material (the magenta/black
-# checkerboard). Testing for them lets Dolly refuse the pass without forcing a
-# shader reload that would itself swap a working precompiled shader for the
-# error material.
+# Game-bin DLLs the engine needs to *recompile* the Native DOF material at
+# runtime. ``vfx_dx11.dll`` is the DX11 dynamic shader compiler and it statically
+# imports ``slang.dll``; retail Deadlock does not ship ``slang.dll``, so this
+# path normally cannot compile. Testing for them lets Dolly skip the forced
+# reload and keep the engine's shipped precompiled ``dof`` shader instead of
+# swapping a working pass for the error material (the magenta/black checkerboard).
 DOF_COMPILER_FILES = ("vfx_dx11.dll", "slang.dll")
 # Engine text observed when the game install cannot compile the Native DOF
 # material because its vfx shader compiler files are missing: the DOF pass
@@ -89,20 +88,20 @@ DOF_SHADER_COMPILE_ERRORS = ("dynamic shader compile unavailable", "can't load v
 # black checkerboard) and the corrupt pass has crashed Deadlock, so Dolly refuses
 # the override instead of warning and continuing.
 NATIVE_DOF_UNAVAILABLE = (
-    "Native Depth of Field cannot run on this game install: its vfx shader compiler "
-    "is missing, so the engine shows the magenta/black checkerboard and can crash "
-    "Deadlock. Dolly left Native DOF off. Repair the game files (Steam > Deadlock > "
-    "Properties > Installed Files > Verify integrity of game files) to re-enable it, "
-    "or use Citadel Depth of Field instead.")
+    "Native Depth of Field cannot run in this game session: the engine could not "
+    "compile its DOF shader, so the pass would show the magenta/black checkerboard "
+    "and can crash Deadlock. Dolly left Native DOF off. Retail Deadlock normally "
+    "renders the pass from its shipped precompiled shader; use Citadel Depth of "
+    "Field instead, or reconnect and retry.")
 # Require indexed precompiled support before enabling the override. This check
 # cannot identify the cause of a checkerboard or certify the rendered result.
 NATIVE_DOF_VERIFY_FILES = (
-    "Dolly could not verify this install's precompiled DOF shader and material "
-    "entries, so it left Native Depth of Field off. Check File > Check Native DOF "
-    "support. If files are missing or unreadable, check folder access and repair "
-    "the game files (Steam > Deadlock > Properties > Installed Files > Verify "
-    "integrity of game files), then reconnect and try again. You can also use "
-    "Citadel Depth of Field instead.")
+    "Dolly could not verify this install's shipped precompiled DOF shader and "
+    "material entries, so it left Native Depth of Field off. Check File > Check "
+    "Native DOF support. If the precompiled shader or material files are missing "
+    "or unreadable, check folder access and repair the game files (Steam > Deadlock "
+    "> Properties > Installed Files > Verify integrity of game files), then "
+    "reconnect and try again. You can also use Citadel Depth of Field instead.")
 
 
 def _dof_shader_compile_failed(text):
@@ -3821,8 +3820,10 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._message("Native DOF enabled the engine's dynamic shader compilation for this session; "
                               "your shader setting is restored when you disconnect.", playing=False)
             self._startup_evidence["dof_shader"] = evidence
-            LOG.warning("Native DOF compiler files are missing; skipping the forced reload: %s",
-                        ", ".join(missing))
+            LOG.info("Native DOF vfx compiler files are absent (%s); retail Deadlock ships only "
+                     "the precompiled DOF shader, so Dolly uses it and skips the optional "
+                     "forced reload.",
+                     ", ".join(missing))
             return changed
         # Always refresh the DOF shaders once so a stale compile cannot keep
         # the engine's error material on screen, even when the setting above is
@@ -3922,7 +3923,17 @@ class Controller(ReplayWarmupMixin, LayerModesMixin, ExportTimingMixin, PausedFl
                 self._require_native_demo(result)
                 if not result.get("paused") or int(result["tick"]) != int(current["tick"]):
                     raise RuntimeError("The replay moved while applying DOF. Pause it and retry.")
-            except Exception:
+            except Exception as exc:
+                try:
+                    names = sorted(set(getattr(preview, "setup_values", {}) or {})
+                                   | {track.name for track in (getattr(preview, "tracks", None) or ())
+                                      if getattr(track, "keys", None)})
+                except (AttributeError, TypeError):
+                    names = []
+                # Record exactly which compiled effect tracks the game was asked
+                # to apply, so a failed report does not depend on console output.
+                LOG.error("Native DOF preview failed (%s: %s); submitted effect tracks: %s",
+                          type(exc).__name__, exc, ", ".join(names) or "none")
                 self._release_native_camera()
                 self._invalidate_paused_camera()
                 raise

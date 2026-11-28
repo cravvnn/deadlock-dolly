@@ -230,6 +230,9 @@ class NativeBridge(MediaTransport):
         self._heartbeat_lock = threading.Lock()
         self._thread = None
         self._closed = False
+        # Last refused/faulted command snapshot, kept for diagnostics export
+        # even while the game is still running.
+        self._last_fault = None
         self._command = 0
         self._sequence = 0
         self._heartbeat = 0
@@ -413,6 +416,7 @@ class NativeBridge(MediaTransport):
                 return
             self.game_pid = pid
             self._game_exited = exited
+            self._last_fault = None
             self._publish(self._mode, increment=False)
 
     def _check_game(self):
@@ -599,7 +603,28 @@ class NativeBridge(MediaTransport):
                 # Unsupported is a session-wide startup/build failure, independent
                 # of command acknowledgments, and cannot be recovered by a shot.
                 if snapshot["state"] == "unsupported" or (acknowledged and snapshot["state"] == "fault"):
-                    raise NativeBridgeError(snapshot.get("message") or "Native camera refused this game build or view")
+                    # Keep the exact refused snapshot for diagnostics export,
+                    # including a fault that already sent Release through a
+                    # failed prepare.
+                    fault = {
+                        "state": snapshot.get("state"),
+                        "error": snapshot.get("error"),
+                        "effect_error": snapshot.get("effect_error"),
+                        "effect_count": snapshot.get("effect_count"),
+                        "message": snapshot.get("message"),
+                        "command": command,
+                        "tick": snapshot.get("tick"),
+                        "frame_count": snapshot.get("frame_count"),
+                    }
+                    self._last_fault = fault
+                    message = str(fault.get("message")
+                                  or "Native camera refused this game build or view")
+                    effect_error = fault.get("effect_error")
+                    if effect_error and "effect error" not in message.casefold():
+                        # Surface a silent effect refusal next to the camera error
+                        # so a support report does not need the raw status bytes.
+                        message += f" (native effect error {effect_error})"
+                    raise NativeBridgeError(message)
                 if acknowledged and snapshot["state"] in states:
                     return snapshot
                 pending = snapshot.get("message", snapshot["state"])
@@ -1447,6 +1472,7 @@ class NativeBridge(MediaTransport):
             result = {"state": "unavailable", "message": str(exc)}
         with self._lock:
             result["attach_config"] = deepcopy(getattr(self, "_editor_attach_diagnostics", None))
+            result["last_fault"] = deepcopy(self._last_fault)
         for key, reader in (("attach_roster", self.editor_roster),
                             ("attach_bones", self.editor_bones),
                             ("attach_result", self.editor_attach_result)):

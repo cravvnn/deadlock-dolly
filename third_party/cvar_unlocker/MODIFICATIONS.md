@@ -1,5 +1,16 @@
 # Bundled cvar unlocker modifications
 
+- `unlocker-build-6883.patch` (apply after 6882): adds the exact reviewed 6883
+  server paired with the unchanged 6866/6871/6873/6875/6877/6880/6882 Tier0 binary. The reviewed
+  Config001 table and methods are unchanged from 6882 (`0x2bc6570`; slots `0x9c0f80`/`0x9c0f8c`/`0x9c2e30`),
+  proven by masked whole-unwind-family comparison of all three bodies against the
+  6883 bytes. The Tier0 CCvar table and the fourteen adapter slots
+  (`cvar_slots_6864.inc`) are unchanged from 6866/6871/6873/6875/6877/6880/6882.
+  Earlier accepted pairs, secure-mode rejection and owned-command shutdown
+  behavior remain intact. Three compiled ABI/lifecycle suites, 1311
+  actual-function pair checks, the 6882 predecessor rejection and the
+  static-CRT/export/Tier0 import audit pass.
+
 - `unlocker-build-6882.patch` (apply after 6880): adds the exact reviewed 6882
   server paired with the unchanged 6866/6871/6873/6875/6877/6880 Tier0 binary and its relocated Config001
   table and methods (`0x2bc6570`; slots `0x9c0f80`/`0x9c0f8c`/`0x9c2e30`). The Tier0 CCvar table and

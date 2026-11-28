@@ -105,7 +105,7 @@
     },
     {
       "path": "dolly/__init__.py",
-      "sha256": "f91e1c7bb0cfde4235cfdb48530c8913ea91115fc68e6c6571a802c543cb96d6",
+      "sha256": "ac279b6645445643ddad403607b1bcd4db5eee540d1f12dbabd6ab8899b663ae",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "value",
       "disposition": "no independent lifecycle",
@@ -195,7 +195,7 @@
     },
     {
       "path": "dolly/_runtime_generated.py",
-      "sha256": "b0ac79a69bd8d0494e780d0ed46d126f9cb5c5b17c12031df35dad4a779dce39",
+      "sha256": "26298d09a76318b47f946e7b8c86a39f88763596183c53aa985525d4cea2a4e9",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -807,7 +807,7 @@
     },
     {
       "path": "dolly/controller.py",
-      "sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6",
+      "sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -1257,7 +1257,7 @@
     },
     {
       "path": "dolly/definitions.py",
-      "sha256": "5f68e6c5a84c38e5a4979f7ea487434917267c1b922bb1d868fcc8ca390341b4",
+      "sha256": "c3e0934afb4093cfc74a479545eacea2ce26515db73d2e8d726e552b574819bb",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L03",
       "disposition": "stateful partial/open",
@@ -2383,7 +2383,7 @@
     },
     {
       "path": "dolly/follow_target.py",
-      "sha256": "2aebb7a36676c16b878795ccd2ea82f6cb161b00bb5473e048ef557421754a81",
+      "sha256": "d9de63a107775f23bc0e3227483746f9e888f7aafa74167cdcf836467f29e7b0",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -3508,7 +3508,7 @@
     },
     {
       "path": "dolly/native_bridge.py",
-      "sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71",
+      "sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "stateful partial/open",
@@ -7681,7 +7681,7 @@
     },
     {
       "path": "native/include/dolly_effects.hpp",
-      "sha256": "785eb6a53b05b5f7abfbb861b5d467444c4f8ffccb44ee80f8fc233850760c75",
+      "sha256": "4ad261601b52f0be9efbfd13500c10c1025deb2b854dcf75138b7ce4efb8c009",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -8623,7 +8623,7 @@
     },
     {
       "path": "native/include/dolly_runtime_generated.hpp",
-      "sha256": "7bf67f1ecc13f859ff4cbf83b692a51ffdbe8d7c0372f6acc00b845b4cc80aaf",
+      "sha256": "70fe5e21730c3ead8c07e60b0d4e85d2ecb60ff64830603bb19c3f6d1d552543",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -8968,7 +8968,7 @@
     },
     {
       "path": "native/src/bridge_win.cpp",
-      "sha256": "a2ae9e492133b1f36cdae545aec7fb66442eea2c831cb62ecfe3c60cbd907d7b",
+      "sha256": "2c4e88397d6bc1e8a85593d77e71df3e7c89b152efa1324c757453552be29705",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -9181,7 +9181,7 @@
     },
     {
       "path": "native/src/dolly_compat_generated.hpp",
-      "sha256": "420abff17beedf3f6c5d4bbf70e4efd56f1888707908ce6bf01795325427ce1a",
+      "sha256": "713a7dba29ddcc7672c1db84b03885ac3e19eb0fd346922092f9ee7735e067ee",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -9539,7 +9539,7 @@
     },
     {
       "path": "native/src/dolly_follow_anchor_generated.hpp",
-      "sha256": "b8fe220a4c18212be840e458f6cbc82776a0805f705c2ced96ddcce667334126",
+      "sha256": "35a504bbc9c6f15cd74ff7e6c9641aa20f3aa070613c24dcf1a16d32c11faf9a",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "generated",
       "disposition": "generated data/schema",
@@ -10502,7 +10502,7 @@
     },
     {
       "path": "native/src/dolly_remote_definitions.hpp",
-      "sha256": "5089b7d6dd8a4afd25a2106492a4e5cf594030402474221d0cb3809e86a68b48",
+      "sha256": "89d4bde375b088f96106eede962747cfba41fa49009d6cccaf773b9a2eea6b6c",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11111,7 +11111,7 @@
     },
     {
       "path": "native/src/native_effects_win.hpp",
-      "sha256": "e6825856722993314b9f3d0bf110b7f4fac7158b1773bcbc277c48dcb65e815e",
+      "sha256": "51ae4faa1afd6b6deaeb3842dbdfbaaab58a81efe0b61b43c1156bcdca3f4131",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11173,7 +11173,7 @@
     },
     {
       "path": "native/src/native_gameplay_effects_win.hpp",
-      "sha256": "92759cc51db3ed29d09014715d3be33edd1fa33894c8e91ed9ab011a7f920490",
+      "sha256": "ca23a81300b3f36c8f236f05ca471a35a87ba9cb82c8a31350ed651c641fc9f6",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -11220,7 +11220,7 @@
     },
     {
       "path": "native/src/native_relief_win.hpp",
-      "sha256": "a3fb3befd82be29a82779e415073e27766fe8a88bfa6e69c48509c13b084f2ce",
+      "sha256": "87e76a915f5ecfd553ab3ad50e48d662cf0ce845957d75b403766b8c8fd4764b",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L01",
       "disposition": "native owner/delegated contract open",
@@ -12112,7 +12112,7 @@
     },
     {
       "path": "tools/publish_definitions.py",
-      "sha256": "37a0e6319cb09f16cd708763a83a05c45f9446790b4a0cbddcdde7c2a24c91f1",
+      "sha256": "ceee5ce27b2ecf3fc81d83fc065981a88c7a4cfac5ccc1ceddc67201de960bf7",
       "digest_kind": "utf8-bom-stripped-lf",
       "family": "L06",
       "disposition": "offline-tool scope",
@@ -12385,7 +12385,7 @@
       "instances": [
         "ArchiveCreateApi"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/AtomicCopy.tla": {
       "path": "dolly/update_worker.py",
@@ -12462,7 +12462,7 @@
       "instances": [
         "BridgeCloseApi"
       ],
-      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
+      "owner_utf8_lf_sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf"
     },
     "dolly/CameraSessionJoin.tla": {
       "path": "dolly/controller.py",
@@ -12471,7 +12471,7 @@
         "dolly/CameraSessionJoin.cfg",
         "dolly/CameraSessionJoin-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/CameraSessionModes.tla": {
       "path": "dolly/controller.py",
@@ -12483,7 +12483,7 @@
       "instances": [
         "CameraRetirementApi"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/CaptureRestoreJoin.tla": {
       "path": "dolly/video_export.py",
@@ -12555,7 +12555,7 @@
       "instances": [
         "ConsoleReconnectApi"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/ConsoleStart.tla": {
       "path": "dolly/console.py",
@@ -12586,7 +12586,7 @@
       "instances": [
         "DefinitionsFirstReadApi"
       ],
-      "owner_utf8_lf_sha256": "5f68e6c5a84c38e5a4979f7ea487434917267c1b922bb1d868fcc8ca390341b4"
+      "owner_utf8_lf_sha256": "c3e0934afb4093cfc74a479545eacea2ce26515db73d2e8d726e552b574819bb"
     },
     "dolly/DialogRule.tla": {
       "path": "dolly/gui.py",
@@ -12612,7 +12612,7 @@
         "dolly/DollyRoot.cfg",
         "dolly/DollyRoot-success.cfg"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/EditorEventQueue.tla": {
       "path": "dolly/editor_session.py",
@@ -12664,7 +12664,7 @@
         "dolly/FollowSelection.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/GameExitClose.tla": {
       "path": "dolly/native_bridge.py",
@@ -12673,7 +12673,7 @@
         "dolly/GameExitClose.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
+      "owner_utf8_lf_sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf"
     },
     "dolly/GameFileCache.tla": {
       "path": "dolly/preload.py",
@@ -12713,7 +12713,7 @@
       "configs": [
         "dolly/HeartbeatUnmap.cfg"
       ],
-      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
+      "owner_utf8_lf_sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf"
     },
     "dolly/HelperWorkspace.tla": {
       "path": "dolly/source2viewer.py",
@@ -12756,7 +12756,7 @@
         "dolly/HudOwnership.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/LaunchRecovery.tla": {
       "path": "dolly/launcher.py",
@@ -12852,7 +12852,7 @@
         "dolly/PlaybackIdentity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/PlaybackStart.tla": {
       "path": "dolly/controller.py",
@@ -12863,7 +12863,7 @@
       "instances": [
         "PlaybackStartApi"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/PlayerFailure.tla": {
       "path": "dolly/video_export.py",
@@ -12911,7 +12911,7 @@
       "configs": [
         "dolly/PreparedShot.cfg"
       ],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/PresetPublish.tla": {
       "path": "dolly/reshade_setup.py",
@@ -12988,7 +12988,7 @@
       "configs": [
         "dolly/ReleaseJoin.cfg"
       ],
-      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71",
+      "owner_utf8_lf_sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf",
       "instances": [
         "CameraLeaseApi"
       ]
@@ -13055,7 +13055,7 @@
         "dolly/SceneOpacity.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "88e33b6aa9799bbfdc3ea8565689c873eff6f58bb243dc4126e3268c575a28c6"
+      "owner_utf8_lf_sha256": "6a4ffc1a00c914da5241985abd17913f3d87cafdb520d801b150c55501d22769"
     },
     "dolly/ScratchCompletion.tla": {
       "path": "dolly/player_layer.py",
@@ -13111,7 +13111,7 @@
       "configs": [
         "dolly/StatusSnapshot.cfg"
       ],
-      "owner_utf8_lf_sha256": "6699c550adcbe1addb741952f9f3f1c04cf0e33c1ef6e7c54d436573a8c30b71"
+      "owner_utf8_lf_sha256": "9a69a919e1e992debf59056455a5486c6a11db62367766e259ce7c86d3553adf"
     },
     "dolly/StillCleanup.tla": {
       "path": "dolly/screenshot.py",
@@ -13288,7 +13288,7 @@
         "native/src/BridgeCommandAdmission.cfg"
       ],
       "instances": [],
-      "owner_utf8_lf_sha256": "a2ae9e492133b1f36cdae545aec7fb66442eea2c831cb62ecfe3c60cbd907d7b"
+      "owner_utf8_lf_sha256": "2c4e88397d6bc1e8a85593d77e71df3e7c89b152efa1324c757453552be29705"
     },
     "native/src/CameraOnlyCapture.tla": {
       "path": "native/src/dolly_video_win.cpp",
@@ -13336,7 +13336,7 @@
       "configs": [
         "native/src/NativeSnapshotClose.cfg"
       ],
-      "owner_utf8_lf_sha256": "a2ae9e492133b1f36cdae545aec7fb66442eea2c831cb62ecfe3c60cbd907d7b"
+      "owner_utf8_lf_sha256": "2c4e88397d6bc1e8a85593d77e71df3e7c89b152efa1324c757453552be29705"
     },
     "native/src/PickerGizmoSession.tla": {
       "path": "native/src/dolly_object_picker_ui.cpp",
@@ -14675,6 +14675,11 @@
     },
     {
       "path": "docs/RELEASE_NOTES_0.7.7-beta.md",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
+      "path": "docs/RELEASE_NOTES_0.7.70-beta.md",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
     },
@@ -18098,6 +18103,11 @@
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
     },
     {
+      "path": "native/profiles/deadlock-2026-11-28-6883-complete.json",
+      "category": "metadata/configuration/documentation input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "native/profiles/deadlock-client-2026-09-07-engine-2026-08-13.json",
       "category": "metadata/configuration/documentation input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19487,6 +19497,11 @@
       "coverage": "explicit source role, not proof or execution coverage"
     },
     {
+      "path": "tests/test_native_dof_support.py",
+      "category": "test/support input",
+      "coverage": "explicit source role, not proof or execution coverage"
+    },
+    {
       "path": "tests/test_next_ten.py",
       "category": "test/support input",
       "coverage": "explicit source role, not proof or execution coverage"
@@ -19956,6 +19971,11 @@
       "path": "third_party/cvar_unlocker/unlocker-build-6882.patch",
       "category": "external dependency/resource",
       "coverage": "Explicit source role; CRAV bounded scopes and owner checks do not establish full captured-scene or whole-program proof."
+    },
+    {
+      "path": "third_party/cvar_unlocker/unlocker-build-6883.patch",
+      "category": "external dependency/resource",
+      "coverage": "explicit source role, not proof or execution coverage"
     },
     {
       "path": "third_party/cvar_unlocker/unlocker-shutdown.patch",

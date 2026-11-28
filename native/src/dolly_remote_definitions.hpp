@@ -14,6 +14,7 @@
 //           <paused> <seeking> <tick> <filename>
 //   +engine <sha256> <image_size> <layout>
 //   +cvar <name> <table> <setter> <find> <data> <data_slot> <extended>
+//         [<season2_types>]
 //   +tier0 <sha256> <image_size> <layout>
 //   +client <sha256> <image_size> <setup> <caller> <vtable> <globals>
 //           <engine_client> <render_fraction> <revision> <delegate>
@@ -86,6 +87,7 @@ struct CvarLayout {
     std::uintptr_t data = 0;
     unsigned data_slot = 0;
     bool extended = false;
+    bool season2_types = false;
 };
 
 struct Tier0Profile {
@@ -308,18 +310,29 @@ inline bool parse_engine_layout(char** tokens, std::size_t count, EngineLayout& 
     return true;
 }
 
+// Season 2 moved every nonzero CVValue_t type by two. A legacy 8-token row
+// emitted before the optional token existed is recognised by its reviewed
+// setter RVA; the parser cannot call the bridge's layout helper here because
+// this header is also included from inside the bridge's anonymous namespace.
+inline bool season2_setter(std::uintptr_t setter) {
+    return setter == 0x20ffa0 || setter == 0x20fe50 || setter == 0x20fd10;
+}
+
 inline bool parse_cvar_layout(char** tokens, std::size_t count, CvarLayout& layout) {
-    if (count != 8 || !parse_name(tokens[1], layout.name))
+    if ((count != 8 && count != 9) || !parse_name(tokens[1], layout.name))
         return false;
     if (!parse_hex(tokens[2], layout.table) || !parse_hex(tokens[3], layout.setter) ||
         !parse_hex(tokens[4], layout.find) || !parse_hex(tokens[5], layout.data))
         return false;
-    unsigned slot = 0, extended = 0;
+    unsigned slot = 0, extended = 0, season2 = 0;
     if (!parse_decimal(tokens[6], slot, 64) || (slot != 41 && slot != 43) ||
         !parse_decimal(tokens[7], extended, 1))
         return false;
+    if (count == 9 && !parse_decimal(tokens[8], season2, 1))
+        return false;
     layout.data_slot = slot;
     layout.extended = extended != 0;
+    layout.season2_types = count == 9 ? season2 != 0 : season2_setter(layout.setter);
     return true;
 }
 

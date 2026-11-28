@@ -19,6 +19,10 @@ constexpr char kBuild6853Tier0Hash[] = "3eb86a30eba4e33140232a536555ae846cdba1ba
 constexpr std::uintptr_t kCvarTable = 0x3106e8, kCvarSet = 0x20ec60;
 std::uintptr_t gTier0 = 0, gCvar = 0;
 bool gExtendedCvarSupported = false;
+// Set once from the exact reviewed tier0 layout. The Season-2 runtime enum is
+// not inferred from the live setter address, so a later tier0 relocation cannot
+// silently typeshift every effect or relief cvar.
+bool gCvarSeason2Types = false;
 struct CvarRef {
     std::uint64_t id = 0xffffffff;
     std::uintptr_t data = 0;
@@ -34,57 +38,119 @@ SetCvarFn gSetCvar = nullptr;
 // CVValue_t type 13 is a contiguous float32 Vector4 in the updated tier0
 // build. The older scalar profile does not opt into vector writes. All four lanes are passed through SetValueInternal in one call.
 using EffectValue = std::array<double, 4>;
+// References, per-user/server-controlled vars and callback reentry.
+constexpr std::uint64_t kBlockedCvarFlags = (1ull << 2) | (1ull << 9) | (1ull << 10) |
+                                            (1ull << 13) | (1ull << 15) | (1ull << 18) |
+                                            (1ull << 22);
+// Diagnostics are written only on a refused path, so the compare-only frame
+// path pays nothing for them.
+inline void effect_detail(char* out, std::size_t size, const char* name,
+                          const char* reason) noexcept {
+    if (out && size)
+        std::snprintf(out, size, "%s: %s", name, reason);
+}
+inline void effect_detail_type(char* out, std::size_t size, const char* name, unsigned actual,
+                               unsigned expected) noexcept {
+    if (out && size)
+        std::snprintf(out, size, "%s: type %u, expected %u", name, actual, expected);
+}
+inline void effect_detail_flags(char* out, std::size_t size, const char* name,
+                                std::uint64_t flags) noexcept {
+    if (out && size)
+        std::snprintf(out, size, "%s: blocked flags 0x%llx", name,
+                      static_cast<unsigned long long>(flags));
+}
 struct EffectBinding {
     CvarRef ref;
     unsigned id = 0;
     EffectValue restore{};
-    bool check() const noexcept {
-        if (id >= 7 && !gExtendedCvarSupported)
+    bool check(char* detail = nullptr, std::size_t size = 0) const noexcept {
+        if (id >= kEffects.size()) {
+            if (detail && size)
+                std::snprintf(detail, size, "effect id %u is out of range", id);
             return false;
+        }
+        const auto& spec = kEffects[id];
+        if (id >= 7 && !gExtendedCvarSupported) {
+            effect_detail(detail, size, spec.name, "extended cvar profile is unsupported");
+            return false;
+        }
         std::uint16_t type = 0;
         std::uint64_t flags = 0;
         std::uintptr_t name = 0;
         char text[96]{};
-        const auto& spec = kEffects[id];
-        auto length = std::strlen(spec.name) + 1;
-        return read_value(ref.data, name) && read_memory(name, text, length) &&
-               !std::strcmp(text, spec.name) && read_value(ref.data + 0x28, type) &&
-               type == effect_cvar_type(spec.type, season2_cvar_types(
-                          gTier0, reinterpret_cast<std::uintptr_t>(gSetCvar))) &&
-               read_value(ref.data + 0x30, flags)
-               // Reject references, per-user/server-controlled vars and callback reentry.
-               && !(flags & ((1ull << 2) | (1ull << 9) | (1ull << 10) | (1ull << 13) |
-                             (1ull << 15) | (1ull << 18) | (1ull << 22)));
-    }
-    bool read(EffectValue& value) const noexcept {
-        if (!check())
+        const auto length = std::strlen(spec.name) + 1;
+        if (!read_value(ref.data, name)) {
+            effect_detail(detail, size, spec.name, "cvar metadata is unreadable");
             return false;
+        }
+        if (!read_memory(name, text, length)) {
+            effect_detail(detail, size, spec.name, "cvar name is unreadable");
+            return false;
+        }
+        if (std::strcmp(text, spec.name)) {
+            effect_detail(detail, size, spec.name, "name mismatch");
+            return false;
+        }
+        if (!read_value(ref.data + 0x28, type)) {
+            effect_detail(detail, size, spec.name, "cvar type is unreadable");
+            return false;
+        }
+        const unsigned expected = effect_cvar_type(spec.type, gCvarSeason2Types);
+        if (type != expected) {
+            effect_detail_type(detail, size, spec.name, type, expected);
+            return false;
+        }
+        if (!read_value(ref.data + 0x30, flags)) {
+            effect_detail(detail, size, spec.name, "cvar flags are unreadable");
+            return false;
+        }
+        if (flags & kBlockedCvarFlags) {
+            effect_detail_flags(detail, size, spec.name, flags);
+            return false;
+        }
+        return true;
+    }
+    bool read(EffectValue& value, char* detail = nullptr, std::size_t size = 0) const noexcept {
+        if (!check(detail, size))
+            return false;
+        const auto& spec = kEffects[id];
         value = {};
-        if (kEffects[id].type == 0) {
+        if (spec.type == 0) {
             unsigned char v = 0;
-            if (!read_value(ref.data + 0x58, v) || v > 1)
+            if (!read_value(ref.data + 0x58, v) || v > 1) {
+                effect_detail(detail, size, spec.name, "boolean value is unreadable");
                 return false;
+            }
             value[0] = v;
-        } else if (kEffects[id].type == 3) {
+        } else if (spec.type == 3) {
             std::int32_t v = 0;
-            if (!read_value(ref.data + 0x58, v))
+            if (!read_value(ref.data + 0x58, v)) {
+                effect_detail(detail, size, spec.name, "integer value is unreadable");
                 return false;
+            }
             value[0] = v;
         } else {
             std::array<float, 4> v{};
-            if (!read_memory(ref.data + 0x58, v.data(), kEffects[id].components * sizeof(float)))
+            if (!read_memory(ref.data + 0x58, v.data(), spec.components * sizeof(float))) {
+                effect_detail(detail, size, spec.name, "floating value is unreadable");
                 return false;
-            for (unsigned i = 0; i < kEffects[id].components; ++i)
+            }
+            for (unsigned i = 0; i < spec.components; ++i)
                 value[i] = v[i];
         }
-        for (unsigned i = 0; i < kEffects[id].components; ++i)
-            if (!std::isfinite(value[i]))
+        for (unsigned i = 0; i < spec.components; ++i)
+            if (!std::isfinite(value[i])) {
+                effect_detail(detail, size, spec.name, "non-finite value");
                 return false;
+            }
         return true;
     }
-    bool read(double& value) const noexcept {
+    bool read(double& value, char* detail = nullptr, std::size_t size = 0) const noexcept {
+        if (id >= kEffects.size() || kEffects[id].components != 1)
+            return false;
         EffectValue result{};
-        if (kEffects[id].components != 1 || !read(result))
+        if (!read(result, detail, size))
             return false;
         value = result[0];
         return true;
@@ -133,11 +199,21 @@ struct NativeEffectState {
     unsigned count = 0, error = 0;
     std::uint64_t frames = 0;
     double phase = 0;
+    // Exact refused cvar/reason for the editor's fault message. Empty on the
+    // frames that applied normally.
+    char detail[192]{};
     bool restore() noexcept {
+        detail[0] = '\0';
         bool okay = true;
-        for (unsigned i = 0; i < count; ++i)
-            if (!bindings[i].write(bindings[i].restore))
-                okay = false;
+        for (unsigned i = 0; i < count; ++i) {
+            if (bindings[i].write(bindings[i].restore))
+                continue;
+            if (!detail[0]) {
+                std::snprintf(detail, sizeof(detail), "%s: restore failed",
+                              kEffects[bindings[i].id].name);
+            }
+            okay = false;
+        }
         if (okay) {
             count = 0;
             shot.reset();
@@ -147,12 +223,14 @@ struct NativeEffectState {
         return okay;
     }
     bool apply(const std::shared_ptr<const NativeShot>& next, double at) noexcept {
+        detail[0] = '\0';
         if (next != shot) {
             if (!restore())
                 return false;
             if (!next || next->effects.empty())
                 return true;
             if (!gCvar || !gFindCvar || !gGetCvarData || !gSetCvar) {
+                std::snprintf(detail, sizeof(detail), "cvar interface missing");
                 error = 1;
                 return false;
             }
@@ -165,18 +243,29 @@ struct NativeEffectState {
                 }
                 if (index == candidate_count) {
                     if (candidate_count >= candidate.size()) {
+                        std::snprintf(detail, sizeof(detail), "too many effect tracks");
                         error = 1;
                         return false;
                     }
                     auto& b = candidate[candidate_count++];
                     b.id = track.id;
+                    if (b.id >= kEffects.size()) {
+                        std::snprintf(detail, sizeof(detail), "effect id %u is out of range", b.id);
+                        error = 1;
+                        return false;
+                    }
                     gFindCvar(reinterpret_cast<void*>(gCvar), &b.ref.id, kEffects[b.id].name, 0);
                     if ((b.ref.id & 0xffff) == 0xffff) {
+                        std::snprintf(detail, sizeof(detail), "%s: cvar not registered",
+                                      kEffects[b.id].name);
                         error = 1;
                         return false;
                     }
                     b.ref.data = gGetCvarData(reinterpret_cast<void*>(gCvar), b.ref.id);
-                    if (!b.read(b.restore)) {
+                    if (!b.read(b.restore, detail, sizeof(detail))) {
+                        if (!detail[0])
+                            std::snprintf(detail, sizeof(detail), "%s: cvar value is unreadable",
+                                          kEffects[b.id].name);
                         error = 1;
                         return false;
                     }
@@ -196,7 +285,14 @@ struct NativeEffectState {
             unsigned index = 0;
             for (; index < count && bindings[index].id != track.id; ++index) {
             }
-            if (index == count || !track.evaluate(at, values[index][track.component])) {
+            if (index == count) {
+                std::snprintf(detail, sizeof(detail), "effect track %u is not bound", track.id);
+                error = 2;
+                return false;
+            }
+            if (!track.evaluate(at, values[index][track.component])) {
+                std::snprintf(detail, sizeof(detail), "%s: curve evaluation failed",
+                              kEffects[bindings[index].id].name);
                 error = 2;
                 return false;
             }
@@ -216,6 +312,8 @@ struct NativeEffectState {
                 effective_dof_ranges(values[range_index], citadel, range_override);
         for (unsigned i = 0; i < count; ++i)
             if (!bindings[i].write(values[i])) {
+                std::snprintf(detail, sizeof(detail), "%s: write failed or clamped",
+                              kEffects[bindings[i].id].name);
                 error = 2;
                 return false;
             }
@@ -236,6 +334,9 @@ struct CvarLayout {
     std::uintptr_t data = 0;
     unsigned data_slot = 0;
     bool extended = false;
+    // Season 2 moved every nonzero CVValue_t type by two. Selected only from
+    // this reviewed layout, never inferred from the live setter pointer.
+    bool season2_types = false;
 };
 
 static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
@@ -244,6 +345,7 @@ static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
         layout.table = 0x313208; layout.setter = 0x20fd10;
         layout.find = 0x6c710; layout.data = 0x6c650;
         layout.data_slot = 41; layout.extended = true;
+        layout.season2_types = true;
         return true;
     }
     // Build 6864 keeps the reviewed 6861 table, setter, lookup and data RVAs.
@@ -252,12 +354,14 @@ static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
         layout.table = 0x313208; layout.setter = 0x20fe50;
         layout.find = 0x6c710; layout.data = 0x6c650;
         layout.data_slot = 41; layout.extended = true;
+        layout.season2_types = true;
         return true;
     }
     if (module_matches(tier0, kBuild6853Tier0Hash, 0x402000)) {
         layout.table = 0x313208; layout.setter = 0x20ffa0;
         layout.find = 0x6c6b0; layout.data = 0x6c5f0;
         layout.data_slot = 41; layout.extended = true;
+        layout.season2_types = true;
         return true;
     }
     const bool build6801 = module_matches(tier0, kBuild6801Tier0Hash, 0x401000);
@@ -276,6 +380,7 @@ static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
         layout.data = september ? 0x6c5f0u : 0x6be30u;
         layout.data_slot = september ? 41 : 43;
         layout.extended = september || module_matches(tier0, kUpdatedTier0Hash, 0x400000);
+        layout.season2_types = false;
         return true;
     }
     if (!gRemoteDefinitions.loaded)
@@ -293,12 +398,15 @@ static bool resolve_cvar_layout(HMODULE tier0, CvarLayout& layout) {
         layout.data = found->data;
         layout.data_slot = found->data_slot;
         layout.extended = found->extended;
+        layout.season2_types = found->season2_types;
         return true;
     }
     return false;
 }
 
 static bool init_cvar_interface() {
+    // No earlier layout may leak into a retry or a failed verification.
+    gCvarSeason2Types = false;
     auto tier0 = GetModuleHandleW(L"tier0.dll");
     CvarLayout layout;
     if (!resolve_cvar_layout(tier0, layout))
@@ -326,5 +434,6 @@ static bool init_cvar_interface() {
     gFindCvar = reinterpret_cast<FindCvarFn>(find);
     gGetCvarData = reinterpret_cast<CvarDataFn>(data);
     gSetCvar = reinterpret_cast<SetCvarFn>(gTier0 + layout.setter);
+    gCvarSeason2Types = layout.season2_types;
     return true;
 }

@@ -110,6 +110,13 @@ def derived_tier0_layout(profile: dict) -> dict[str, int]:
     # Slot 41 is the September-and-later extended layout. A legacy slot-43
     # build keeps vector ConVar support off; the bridge verifies slots anyway.
     layout["extended"] = layout["data_slot"] == 41
+    # Only a profile that explicitly reviews the build's cvar value typing adds
+    # the optional token; older profiles keep the eight-token published shape.
+    if "season2_types" in block:
+        season2_types = block["season2_types"]
+        if type(season2_types) is not bool:
+            raise PublishError("The profile has an invalid season2_types value")
+        layout["season2_types"] = season2_types
     return layout
 
 
@@ -122,7 +129,7 @@ def _object(value, field: str) -> dict:
 def _layout_row(values: dict) -> dict:
     row = {}
     for key, value in values.items():
-        if key == "extended":
+        if key in ("extended", "season2_types"):
             row[key] = bool(value)
         elif key == "data_slot":
             row[key] = value
@@ -134,10 +141,14 @@ def _layout_row(values: dict) -> dict:
 def _same_layout(stored: dict, values: dict) -> bool:
     if not isinstance(stored, dict):
         return False
+    # An explicit value-typing flag changes what the bridge does, so a layout
+    # that omits it is not interchangeable with one that carries it.
+    if ("season2_types" in stored) != ("season2_types" in values):
+        return False
     for key, value in values.items():
         raw = stored.get(key)
         try:
-            if key == "extended":
+            if key in ("extended", "season2_types"):
                 if bool(raw) != bool(value):
                     return False
             elif key == "data_slot":
@@ -374,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         print("  client:", profile["client"]["client_sha256"])
         print("  engine layout:", {k: hex(v) for k, v in derived_engine_layout(profile).items()})
         print("  tier0 layout:", {k: (hex(v) if isinstance(v, int)
-                                      and k not in ("data_slot", "extended") else v)
+                                      and k not in ("data_slot", "extended", "season2_types") else v)
                                   for k, v in derived_tier0_layout(profile).items()})
         return 0
 

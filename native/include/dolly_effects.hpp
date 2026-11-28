@@ -14,13 +14,18 @@ inline constexpr unsigned effect_cvar_type(unsigned legacy_type, bool season2) n
     return season2 && legacy_type != 0 ? legacy_type + 2 : legacy_type;
 }
 inline constexpr bool season2_cvar_types(std::uintptr_t base, std::uintptr_t setter) noexcept {
-    return base != 0 && (setter == base + 0x20ffa0 || setter == base + 0x20fe50);
+    return base != 0 && (setter == base + 0x20ffa0 || setter == base + 0x20fe50 ||
+                         setter == base + 0x20fd10);
 }
 // Normalize into the relief owner's existing bool/int32/float representation.
-// Other runtime types are refused before any binding is published.
+// Other runtime types are refused before any binding is published. The legacy
+// and Season-2 runtime enums differ, so a mismatched profile is refused rather
+// than passed through: reading or writing a 4-byte float through a 1-byte bool
+// slot would corrupt the cvar.
 inline constexpr unsigned relief_cvar_type(unsigned runtime_type, bool season2) noexcept {
-    if (!season2) return runtime_type;
-    return runtime_type == 0 ? 0 : runtime_type == 5 ? 3 : runtime_type == 9 ? 2 : 0xffff;
+    if (season2)
+        return runtime_type == 0 ? 0 : runtime_type == 5 ? 3 : runtime_type == 9 ? 2 : 0xffff;
+    return runtime_type == 0 ? 0 : runtime_type == 3 ? 3 : runtime_type == 7 ? 2 : 0xffff;
 }
 struct EffectSpec {
     const char* name;

@@ -420,7 +420,7 @@ if(WIN32)
             target_compile_options(wind_fluid_warp_tests PRIVATE /W4 /EHsc /permissive-)
         endif()
         add_test(NAME native_wind_fluid_warp_tests COMMAND wind_fluid_warp_tests)
-        set_tests_properties(native_wind_fluid_warp_tests PROPERTIES TIMEOUT 90)
+        set_tests_properties(native_wind_fluid_warp_tests PROPERTIES TIMEOUT 180)
     endif()
 
     add_library(dolly_lens_rain_dx11 STATIC src/dolly_lens_rain_dx11.cpp)

@@ -5,6 +5,20 @@ build-specific sections preserve historical evidence and pending checks at
 the time of each review. For setup and checking your installed build, use the
 [user guide](../USER_GUIDE.md) and [current documentation](../README.md).
 
+## November 28 build 6883 review
+
+Build 6883 changes `client.dll`, `server.dll` and the Steam depot manifests;
+`engine2.dll`, `tier0.dll`, `scenesystem.dll`, `soundsystem.dll`,
+`resourcesystem.dll`, `rendersystemdx11.dll`, `filesystem_stdio.dll` and the
+stock cfg, video and UI payloads are unchanged from build 6882. All 57 reviewed
+client contract spans, camera/follow/gameplay-effects anchors, and the particle
+table matched build 6882 at their exact RVAs and were verified offline against
+the installed `client.dll`. The exact-server unlocker was rebuilt against the
+unchanged 6866–6882 Tier0 binary (`0x2bc6570`; slots
+`0x9c0f80`/`0x9c0f8c`/`0x9c2e30`), passing 3 compiled suites and 1311
+actual-function pair/table checks; the 6882 predecessor refuses the new pair.
+Offline verification only; no live game run was executed for this update.
+
 ## November 27 build 6882 review
 
 Build 6882 changes `client.dll`, `server.dll` and the Steam depot manifests;

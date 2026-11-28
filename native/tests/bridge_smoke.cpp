@@ -1284,9 +1284,12 @@ void atomic_exports() {
 // Test the production typed effect binding and lifecycle with synthetic convars.
 Allocation* effect_data = nullptr;
 bool reject_effect_write = false;
+bool reject_effect_lookup = false;
 unsigned vector_effect_writes = 0;
 void* __fastcall find_effect(void*, std::uint64_t* out, const char* name, int) {
     *out = 0xffffffff;
+    if (reject_effect_lookup)
+        return out;
     for (unsigned i = 0; i < kEffects.size(); ++i)
         if (!std::strcmp(name, kEffects[i].name))
             *out = i;
@@ -1313,6 +1316,14 @@ void effect_checks(Fixture& f) {
     gFindCvar = find_effect;
     gGetCvarData = get_effect;
     gSetCvar = set_effect;
+    gCvarSeason2Types = false;
+    // The layout defaults to the legacy representation; only an exact reviewed
+    // Season 2 layout may select the shifted runtime types.
+    CvarLayout layout_defaults;
+    require(!layout_defaults.extended && !layout_defaults.season2_types,
+            "Cvar layout must default to legacy types");
+    layout_defaults.season2_types = true;
+    require(layout_defaults.season2_types, "Cvar layout lost its Season 2 selection");
     for (unsigned i = 0; i < kEffects.size(); ++i) {
         auto at = values.address() + i * 0x100;
         put(at, reinterpret_cast<std::uintptr_t>(kEffects[i].name));
@@ -1394,7 +1405,15 @@ void effect_checks(Fixture& f) {
     command(Mode::Hold);
     reject_effect_write = true;
     status = f.frame();
-    require(status.error == 35, "A refused effect setter was reported as synchronized");
+    require(status.error == 35 && status.effect_error == 2,
+            "A refused effect setter was reported as synchronized");
+    require(std::strstr(status.message, "r_citadel_depthoffield_focus_distance: write failed or clamped"),
+            "Fault message did not name the refused cvar and reason");
+    status = f.frame();
+    require(status.error == 35 && status.effect_error == 2,
+            "Follow-up view lost the refused effect setter error");
+    require(std::strstr(status.message, "r_citadel_depthoffield_focus_distance: write failed or clamped"),
+            "Follow-up view lost the refused cvar detail");
     f.unchanged();
     reject_effect_write = false;
     command(Mode::Release);
@@ -1416,6 +1435,16 @@ void effect_checks(Fixture& f) {
     command(Mode::Hold);
     status = f.frame();
     require(status.error == 35 && status.effect_count == 0, "Wrong native type was accepted");
+    require(status.effect_error == 1, "Refused binding lost its effect error");
+    require(std::strstr(status.message, ": type 3, expected 7"),
+            "Fault message did not name the type mismatch");
+    require(std::strstr(status.message, "no cvar originals were held."),
+            "Fault message claimed originals were restored when none were held");
+    status = f.frame();
+    require(status.error == 35 && status.effect_error == 1,
+            "Follow-up view lost the refused binding effect error");
+    require(std::strstr(status.message, ": type 3, expected 7"),
+            "Follow-up view lost the type mismatch detail");
     f.unchanged();
     put(values.address() + 0x100 + 0x28, std::uint16_t(7));
     f.command(Mode::Release);
@@ -1428,6 +1457,9 @@ void effect_checks(Fixture& f) {
     command(Mode::Release);
     status = f.frame();
     require(status.error == 36 && status.effect_count == 3, "Failed restore was acknowledged");
+    require(status.effect_error == 3, "Failed restore did not publish its effect error");
+    require(std::strstr(status.message, "restoration failed"),
+            "Failed restore did not publish a restoration fault");
     reject_effect_write = false;
     status = f.frame();
     require(status.state == static_cast<unsigned>(State::Stopped) && status.effect_count == 0,
@@ -1475,6 +1507,70 @@ void effect_checks(Fixture& f) {
     std::array<float, 4> restored_vector{};
     read_value(values.address() + 8 * 0x100 + 0x58, restored_vector);
     require(restored_vector == original, "Vector restore lost a component");
+    // Failure diagnostics name the exact cvar and reason without a heap buffer.
+    gCvar = 0;
+    require(!gEffects.apply(shot, 0) && gEffects.error == 1 &&
+                std::strstr(gEffects.detail, "cvar interface missing"),
+            "Missing cvar interface was not explained");
+    gCvar = 1;
+    reject_effect_lookup = true;
+    require(!gEffects.apply(shot, 0) && gEffects.error == 1 &&
+                std::strstr(gEffects.detail,
+                            "r_citadel_depthoffield_focus_distance: cvar not registered"),
+            "Unregistered cvar was not named");
+    reject_effect_lookup = false;
+    put(values.address() + 0x100,
+        reinterpret_cast<std::uintptr_t>("r_citadel_depthoffield_focus_distancX"));
+    require(!gEffects.apply(shot, 0) && std::strstr(gEffects.detail, "name mismatch"),
+            "Name mismatch was not explained");
+    put(values.address() + 0x100, reinterpret_cast<std::uintptr_t>(kEffects[1].name));
+    put(values.address() + 0x100 + 0x28, std::uint16_t(3));
+    require(!gEffects.apply(shot, 0) && std::strstr(gEffects.detail, "type 3, expected 7"),
+            "Type mismatch was not explained");
+    put(values.address() + 0x100 + 0x28, std::uint16_t(7));
+    put(values.address() + 0x100 + 0x30, std::uint64_t(4));
+    require(!gEffects.apply(shot, 0) && std::strstr(gEffects.detail, "blocked flags 0x4"),
+            "Blocked cvar flags were not explained");
+    put(values.address() + 0x100 + 0x30, std::uint64_t(8));
+    put(values.address() + 0x100 + 0x58, std::numeric_limits<float>::quiet_NaN());
+    require(!gEffects.apply(shot, 0) && std::strstr(gEffects.detail, "non-finite value"),
+            "Non-finite cvar value was not explained");
+    put(values.address() + 0x100 + 0x58, 600.0f);
+    require(!gEffects.apply(shot, std::numeric_limits<double>::quiet_NaN()) &&
+                std::strstr(gEffects.detail, "curve evaluation failed"),
+            "Curve evaluation failure was not explained");
+    require(gEffects.restore() && gEffects.count == 0, "Detail checks left effects owned");
+    // Season 2 runtime types: bool 0, int 5, float 9 and Vector4 15.
+    gCvarSeason2Types = true;
+    for (unsigned i = 0; i < kEffects.size(); ++i)
+        put(values.address() + i * 0x100 + 0x28,
+            static_cast<std::uint16_t>(effect_cvar_type(kEffects[i].type, true)));
+    require(gEffects.apply(shot, 0) && gEffects.count == 3,
+            "Season 2 scalar effect types were refused");
+    require(gEffects.bindings[0].read(value) && value == 100,
+            "Season 2 float effect did not read");
+    require(gEffects.bindings[1].read(value) && value == 0,
+            "Season 2 bool effect did not read");
+    require(gEffects.bindings[2].read(value) && value == 0,
+            "Season 2 int effect did not read");
+    require(gEffects.restore(), "Season 2 scalar effects did not restore");
+    vector_effect_writes = 0;
+    require(gEffects.apply(vector_shot, .5) && gEffects.count == 1 && vector_effect_writes == 1,
+            "Season 2 Vector4 was not written once");
+    require(gEffects.bindings[0].read(vector_value) && vector_value[0] == 15,
+            "Season 2 Vector4 did not read");
+    require(gEffects.restore() && vector_effect_writes == 2,
+            "Season 2 Vector4 did not restore");
+    // The legacy enum must not be accepted once the Season 2 layout is active.
+    put(values.address() + 8 * 0x100 + 0x28, std::uint16_t(13));
+    require(!gEffects.apply(vector_shot, .5) && gEffects.count == 0,
+            "Legacy Vector4 type was accepted under Season 2");
+    require(std::strstr(gEffects.detail, "type 13, expected 15"),
+            "Season 2 type mismatch was not explained");
+    put(values.address() + 8 * 0x100 + 0x28, std::uint16_t(15));
+    for (unsigned i = 0; i < kEffects.size(); ++i)
+        put(values.address() + i * 0x100 + 0x28, static_cast<std::uint16_t>(kEffects[i].type));
+    gCvarSeason2Types = false;
     gExtendedCvarSupported = false;
     gCvar = 0;
     gFindCvar = nullptr;

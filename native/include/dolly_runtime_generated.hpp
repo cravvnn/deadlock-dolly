@@ -6,7 +6,7 @@ namespace dolly { namespace reviewed {
 struct CodeSpan { std::uintptr_t rva; std::size_t size; };
 struct NamedRva { const char* name; std::uintptr_t rva; };
 namespace Preload {
-inline constexpr char CLIENT_SHA256[] = "a8261f7303da90fe5ed9adea28b72494169ec79ae790879238775a7873dad6dc";
+inline constexpr char CLIENT_SHA256[] = "7e9e58a80b53e38d1f81dbe7fb075a052fe5d0e3c8c06fb18abbfae88e6095d7";
 inline constexpr char RESOURCE_SHA256[] = "de95e08178c08768e2c3a808a136db257fbc98af8c6a0d42e21147d0804147e2";
 inline constexpr std::uintptr_t MANAGER = 0x338c3d0;
 inline constexpr std::uintptr_t MANAGER_VTABLE = 0x27cf800;
@@ -29,7 +29,7 @@ inline constexpr std::uintptr_t INTRO_PHASE = 0x80;
 inline constexpr char RESOURCE_RENDERER_SHA256[] = "a7f39b63c02bf471f762bba33b85303318f763be4d1405f3a47106b7bdcff076";
 }
 namespace ReplayCamera {
-inline constexpr char CLIENT_SHA256[] = "a8261f7303da90fe5ed9adea28b72494169ec79ae790879238775a7873dad6dc";
+inline constexpr char CLIENT_SHA256[] = "7e9e58a80b53e38d1f81dbe7fb075a052fe5d0e3c8c06fb18abbfae88e6095d7";
 inline constexpr std::uintptr_t MANAGER = 0x3867530;
 inline constexpr std::uintptr_t MANAGER_VTABLE = 0x27cbb70;
 inline constexpr std::uintptr_t GAMEPLAY_CAMERA_VTABLE = 0x27d35d8;
@@ -107,7 +107,7 @@ inline constexpr std::uintptr_t CONTROLLER_PREDICATE_SLOT = 0x4e8;
 inline constexpr std::uintptr_t CONTROLLER_FINAL_DATA = 0x908;
 }
 namespace AttachRuntime {
-inline constexpr char CLIENT_SHA256[] = "a8261f7303da90fe5ed9adea28b72494169ec79ae790879238775a7873dad6dc";
+inline constexpr char CLIENT_SHA256[] = "7e9e58a80b53e38d1f81dbe7fb075a052fe5d0e3c8c06fb18abbfae88e6095d7";
 inline constexpr std::uintptr_t CLIENT_IMAGE_SIZE = 0x4438000;
 inline constexpr std::uintptr_t INITIALIZER = 0x21a17f0;
 inline constexpr std::uintptr_t ENTITY_VTABLE = 0x2c254a0;
@@ -115,9 +115,9 @@ inline constexpr std::uintptr_t ENTITY_GLOBAL = 0x400f7c0;
 inline constexpr unsigned char INITIALIZER_BYTES[] = {0xff, 0xff, 0x8b, 0x42, 0x30, 0xf, 0xba, 0xe0, 0xb, 0x73, 0xf, 0x48, 0x8b, 0x5c, 0x24, 0x30, 0x48, 0x83, 0xc4, 0x20, 0x5f};
 }
 namespace Unlocker {
-inline constexpr char SHA256[] = "b8111a2eccaaf3fc64b59cbaee2d3dbccdfc89e238ee14e58fabaa1189827608";
-inline constexpr std::uintptr_t SIZE = 0x4cc00;
-inline constexpr char VERSION[] = "v0.5.2-dolly-build-6882";
+inline constexpr char SHA256[] = "7d3d2fb5873fb24317da5672446d34fd599f0b45f40f7bc04975d17e0f00d027";
+inline constexpr std::uintptr_t SIZE = 0x4ce00;
+inline constexpr char VERSION[] = "v0.5.2-dolly-build-6883";
 }
 enum class AttachFieldIndex : unsigned { scene_node, owner, player_origin, player_angles, eye_offset, eye_angles, scene_child, scene_sibling };
 inline constexpr std::size_t kViewOffsetComponents[] = {16, 24, 32};
